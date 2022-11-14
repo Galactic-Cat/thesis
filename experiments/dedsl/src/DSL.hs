@@ -9,7 +9,7 @@ module DSL (eval, Expression (Add, B, Eq, F, I, Ite, Let, Mul, Ref)) where
         F   :: Float -> Expression Float
         I   :: Int -> Expression Int
         Ite :: Expression Bool -> Expression a -> Expression a -> Expression a
-        Let :: [(String, Expression a)] -> Expression b -> Expression b
+        Let :: [(String, Expression a)] -> Expression b -> Expression b -- TODO: Single let binding
         Mul :: (Num a) => Expression a -> Expression a -> Expression a
         Ref :: String -> Expression a
 
