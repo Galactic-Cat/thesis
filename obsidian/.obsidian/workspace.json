@@ -1,0 +1,169 @@
+{
+  "main": {
+    "id": "01a6430fce4bf199",
+    "type": "split",
+    "children": [
+      {
+        "id": "7a51f30ef3bdb6b8",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "04be9d5f93402704",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Thesis.md",
+                "mode": "source",
+                "source": false
+              }
+            }
+          },
+          {
+            "id": "e89fbeb297b17479",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Haskell/Haskell.md",
+                "mode": "source",
+                "source": false
+              }
+            }
+          },
+          {
+            "id": "46e7263a1bb760f4",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Haskell/Algebraic Data Types.md",
+                "mode": "source",
+                "source": false
+              }
+            }
+          }
+        ],
+        "currentTab": 2
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "958d7cdfdca9fbe1",
+    "type": "split",
+    "children": [
+      {
+        "id": "c97fa7e6e8c8b2ec",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "28c3bfb44ecea998",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical"
+              }
+            }
+          },
+          {
+            "id": "3664f06add82f057",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              }
+            }
+          },
+          {
+            "id": "b63cf8c03d85a8b4",
+            "type": "leaf",
+            "state": {
+              "type": "starred",
+              "state": {}
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "81a8c0228168b447",
+    "type": "split",
+    "children": [
+      {
+        "id": "51d98a9272c75d62",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "8c33289c36bda346",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "Haskell/Algebraic Data Types.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              }
+            }
+          },
+          {
+            "id": "8739cf3d345e0e17",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "Haskell/Algebraic Data Types.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              }
+            }
+          },
+          {
+            "id": "cff944ac06134f81",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true
+              }
+            }
+          },
+          {
+            "id": "43cf5e27939617ef",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "Haskell/Algebraic Data Types.md"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "active": "46e7263a1bb760f4",
+  "lastOpenFiles": [
+    "Haskell/Haskell.md",
+    "Thesis.md"
+  ]
+}

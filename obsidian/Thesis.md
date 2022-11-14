@@ -1,0 +1,2 @@
+The main topic of my thesis is finding a way to produce [[differentation|derivative]] programs by [[automatic differentation]] from [[parallel|parallized]] programs, such that they remain parallelized even when differentiated.
+The goal is to implement such a system (in $O(n)$ [[complexity|time]]), on an input program of size $n$, in [[Haskell]] on top of the [[Accelerate]] framework for parallelized lists.
