@@ -1,5 +1,5 @@
 module Main (main) where
-    import NRGADT (dual, Environment (NEmpty), Expression (Let, Res), Idx (Z, S), RHS (Add, Mul, Sin, Val), test)
+    import RGADT (dual, Environment (NEmpty), Expression (Let, Res), Idx (Z, S), RHS (Add, Mul, Sin, Val), test)
 
     seed :: Float
     seed = 1.0
