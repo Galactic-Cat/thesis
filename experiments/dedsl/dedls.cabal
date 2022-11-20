@@ -25,9 +25,7 @@ source-repository head
 
 library
   exposed-modules:
-      DSL
-      RADT
-      SDSL
+      NRGADT
   other-modules:
       Paths_dedls
   hs-source-dirs:

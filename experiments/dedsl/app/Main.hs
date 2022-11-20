@@ -1,27 +1,11 @@
 module Main (main) where
-    import RADT (dual,
-             Environment (NEmpty), 
-             eval, 
-             Expression (Add, Let, Mul, Val, Ref),
-             Tape (TEmpty))
-
-    test :: Expression
-    test =
-        Let
-            (Val 3.0) -- 0
-            (Let
-                (Val 1.0) -- 1
-                (Let
-                    (Mul (Ref 0) (Ref 1)) -- 2
-                    (Let
-                        (Add (Ref 0) (Ref 2)) -- 3
-                        (Ref 3))))
+    import NRGADT (dual, Environment (NEmpty), Expression (Let, Res), Idx (Z, S), RHS (Add, Mul, Sin, Val), test)
 
     seed :: Float
     seed = 1.0
 
-    tape :: Tape
-    tape = dual NEmpty TEmpty test seed
-
     main :: IO ()
-    main = print tape
+    main = print $ dual NEmpty test seed []
+
+    -- expected tape = 1.0 : 1.0 : 1.0 : x1 : cos x1 + x2 : []
+    -- expected tape = [1.0, 1.0, 1.0, 5.0, 8.284]

@@ -2,7 +2,7 @@
 module RADT (dual,
              Environment (NEmpty), 
              eval, 
-             Expression (Add, Let, Mul, Val, Ref),
+             Expression (Add, Let, Mul, Ref, Sin, Val),
              Tape (TEmpty)
     ) where
     data Environment =
@@ -13,8 +13,9 @@ module RADT (dual,
         Add Expression Expression |
         Let Expression Expression |
         Mul Expression Expression |
-        Val Float |
-        Ref Int
+        Ref Int |
+        Sin Expression |
+        Val Float
 
     data Tape =
         TEmpty |
@@ -34,11 +35,12 @@ module RADT (dual,
     eval NEmpty          (Let e1 e2) = eval (NCons e1 0 NEmpty) e2
     eval n@(NCons _ i _) (Let e1 e2) = eval (NCons e1 (i + 1) n) e2
     eval n               (Mul e1 e2) = eval n e1 * eval n e2
-    eval _               (Val v)     = v
     eval NEmpty          (Ref _)     = error "Reference not in environment"
     eval n               (Ref i)     = eval n (evalRef n)
         where evalRef NEmpty          = error "Reference not in environment"
               evalRef (NCons e ri ns) = if ri == i then e else evalRef ns
+    eval n               (Sin e)     = sin $ eval n e
+    eval _               (Val v)     = v
 
     -- buildTape :: Tape -> Expression -> Tape
     -- buildTape TEmpty          (Let _ e2) = buildTape (TCons 0.0 0 TEmpty) e2
@@ -55,7 +57,6 @@ module RADT (dual,
                   TEmpty           -> TCons 0.0 0       TEmpty
                   tc@(TCons _ i _) -> TCons 0.0 (i + 1) tc
     dual n t (Mul e1 e2) d = dual n (dual n t e1 (d * eval n e2)) e2 (d * eval n e1)
-    dual _ t (Val _)     _ = t
     dual n t (Ref ri)    d = dual n (uptape t) (ref n) d
        where uptape TEmpty   = error "tape not long enough"
              uptape (TCons a ti ts)
@@ -65,3 +66,5 @@ module RADT (dual,
              ref (NCons e ni ns)
                  | ri == ni  = e
                  | otherwise = ref ns
+    dual n t (Sin e)     d = dual n t e (d * cos (eval n e))
+    dual _ t (Val _)     _ = t
