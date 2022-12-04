@@ -1,0 +1,65 @@
+\documentclass[a4paper]{article}
+
+\usepackage{amsmath, amssymb}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+
+\setlength{\parskip}{1em}
+\setlength{\parindent}{0px}
+
+\title{Master's Thesis Proposal}
+\author{Simon van Hus\\6147879\\s.vanhus@students.uu.nl}
+\date{\today}
+
+\begin{document}
+    \maketitle
+
+    \section{Introduction} \label{sec:introduction}
+        The aim of this research project is to built an implementation of reverse-mode automatic differentiation that -- through program transformation -- preserves parallelism structures present in the source program in the differentiated program.
+        The goal is to implement this using a dual-numbers approach, and on top of Accelerate, a parallelized array language extension for Haskell \cite{haskell}.
+
+        Automatic differentiation (AD) is an approach for computers to differentiate programs as if they were mathematical functions.
+        Differentiation is useful for application all throughout science, and being able to do it on an efficient basis therefor becomes very important.
+        Current approaches can provide program transformations to create differentiated programs in polynomial time compared to the size of the input program.
+        However, in these approaches using program transformation, complex structures in the program -- like parallelism -- are generally discarded.
+        This is a shame, because many parallelized operations have parallelizable equivalents in the differentiated form.
+        So discarding these structures means that the differentiated program can be much slower than the primal program, while it really doesn't have to be.
+
+        In the rest of this proposal, I'll go over the literature about this topic (in Section \ref{sec:literature}), the research questions and goals (in Section \ref{sec:questions}), and finally the planning going forward (in Section \ref{sec:planning}).
+
+    \section{Literature} \label{sec:literature}
+        \subsection{Forward and Reverse Mode}
+            Automatic differentiation differentiates a program as a function $f:\mathbb{R}^n\to\mathbb{R}^m$/.
+            In general, there's two major techniques for doing so \cite{margossian2019review, elliot2018essence}.
+            We have forward mode, which differentiates the program recursively using the chain rule.
+            This means generating the derivatives in the same order of operations as the primal function, which is both intuitive and easy to implement.
+
+            Reverse mode, like the name suggests evaluates the program in reverse of the execution order.
+            Rather than fixing the independent variables in the function, like in forward mode, reverse mode fixes the dependent variables and computes the so-called ``adjoint'' tangents which are achieved by performing a reverse pass over the computation tree.
+
+            The most important distinction between these two modes is what part of the Jacobian matrix they produce.
+            As forward mode evaluates all dependent variables for a single dependent variable, effectively calculating a column in the Jacobian.
+            This then also means that reverse mode -- evaluating all dependent variables based on a single fixed independent variable -- calculates a row of the Jacobian matrix of the function.
+            This is important for efficient computation.
+            Both forward-mode and reverse-mode can be calculated in polynomial time based on the size of the input program, however the dimensions of the Jacobian (or the number of independent and dependent variables) dictates which is more efficient.
+            Namely, the derivative of a program or function $f:\mathbb{R}^n\to\mathbb{R}^m$ can be calculated more efficiently using forward mode AD when the function has (a lot) more outputs than it has inputs -- so $m\gg n$, as only $n$ sweeps will be necessary to calculate the full Jacobian.
+            Conversely, reverse mode is more efficient when the number of inputs far outweigh the number of outputs, so $m\ll n$, requiring only $m$ sweeps.
+
+            Reverse mode AD is especially current due to many applications in Artificial Intelligence using backpropagation, a special case of reverse mode AD \cite{baydin2018survey, wang2019demystifying}.
+            This is appropriate because many of these systems have many more inputs than outputs.
+            
+        \subsection{Dual-Numbers}
+            % References: Krawiec
+
+        \subsection{Parallelism}
+            % References: Paszke, Schenck, Shaikhha, 
+
+
+    \section{Research Questions and Goals} \label{sec:questions}
+
+    \section{Planning} \label{sec:planning}
+
+    \clearpage
+    \bibliographystyle{acm}
+    \bibliography{references}
+\end{document}
