@@ -1,5 +1,7 @@
-module Neural (CNN (NewCNN), createCNN) where
+module Neural (CNN (NewCNN), createCNN, backPropagate) where
     import Data.Array.Accelerate as A
+    import Data.Array.Accelerate.LLVM.Native as CPU (run)
+    import Data.Functor ((<$>))
     import qualified Prelude as P ((*), (==), drop, head, foldl, fst, IO, map, max, return, snd, sum, zipWith)
     import System.Random (mkStdGen, Random (randomIO, randoms))
 
@@ -17,7 +19,7 @@ module Neural (CNN (NewCNN), createCNN) where
         [Layer2D -> Matrix Float -> Layer2D]          -- Convolutional layers
         [Matrix Float]                                -- Convolutional layer weights
         [Layer -> Matrix Float -> Exp Float -> Layer] -- Fully connected layers
-        [(Float, Matrix Float)]                       -- Fully connected layer weights: (bias, actual weights)
+        [Matrix Float]                                -- Fully connected layer weights: (bias, actual weights)
 
     --region Create operations
     createC :: (Int, Int) -> [(Int, Bool)] -> [Float] -> [(Layer2D -> Matrix Float -> Layer2D, Matrix Float)]
@@ -62,6 +64,25 @@ module Neural (CNN (NewCNN), createCNN) where
             fun lyr wgt bia = fullConnect lyr (use wgt) bia relu
         in
             (fun, (bias, mat)) : createF n ns (P.drop (l * n + 1) rds)
+    --endregion
+
+    --region Backpropagation
+    -- backPropagate :: P.IO CNN -> Vector Float -> Vector Float -> Float -> P.IO CNN
+    -- backPropagate iocnn res des rate = bp res des rate <$> iocnn
+
+    -- bp :: Vector Float -> Vector Float -> Float -> CNN -> CNN
+    -- bp _   _   _   NewCNN {}         = error "use createCNN to initialize cnn before performing backpropagation"
+    -- bp res des rat (CNN cl cw fl fw) =
+    --     let
+    --         d = use des
+    --         r = use res
+    --         dif = zipWith (-) d r
+    --         (dfw, dff) = updateWeights dif (P.map P.snd fw) rat
+    --         (dcw, _)   = updateWeights dff cw rat
+    --     in
+    --         CNN cl dcw fl dfw
+    --     where
+    --         updateWeights :: 
     --endregion
 
     --region Layer operations
