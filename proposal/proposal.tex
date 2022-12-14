@@ -1,6 +1,7 @@
-\documentclass[a4paper]{article}
+\documentclass{article}
 
 \usepackage{amsmath, amssymb}
+\usepackage[a4paper,margin=1.5in]{geometry}
 \usepackage[utf8]{inputenc}
 \usepackage{hyperref}
 
@@ -10,6 +11,9 @@
 \title{Master's Thesis Proposal}
 \author{Simon van Hus\\6147879\\s.vanhus@students.uu.nl}
 \date{\today}
+
+\newcommand{\fw}[1]{\mathcal{F}(#1)}
+\newcommand{\rv}[1]{\mathcal{R}(#1)}
 
 \begin{document}
     \maketitle
@@ -23,69 +27,181 @@
         Current approaches can provide program transformations to create differentiated programs in polynomial time compared to the size of the input program.
         However, in these approaches using program transformation, complex structures in the program -- like parallelism -- are generally discarded.
         This is a shame, because many parallelized operations have parallelizable equivalents in the differentiated form.
-        So discarding these structures means that the differentiated program can be much slower than the primal program, while it really doesn't have to be.
+        So discarding these structures means that the differentiated program can be much slower than the primal program, while it really does not have to be.
 
-        In the rest of this proposal, I'll go over the literature about this topic (in Section \ref{sec:literature}), the research questions and goals (in Section \ref{sec:questions}), and finally the planning going forward (in Section \ref{sec:planning}).
+        In the rest of this proposal, I will go over the research goals (in Section \ref{sec:goals}), the literature about this topic and relevant topics (in Section \ref{sec:literature}), the methodology I plan to apply for this project (in Section \ref{sec:methods}), and finally the planning going forward (in Section \ref{sec:planning}).
+
+    \section{Research Goals} \label{sec:goals}
+        The main goal of my thesis will be to implement a dual numbers program transformation for reverse-mode automatic differentiation, on top of the Accelerate array programming language for Haskell.
+        This implementation will need to set itself apart by allowing for maintaining functional array parallelism from the primal program to the differentiated program.
+
+        This research goal is novel, because currently no such implementation exists for Accelerate, and the exact details of how such an implementation would work are yet unknown.
+        The research is mostly home in the domain of Computing Science, as automatic differentiation is a computing problem, however it is also relevant to Artificial Intelligence, because many AI implementations (like neural networks) rely on automatic differentiation to learn.
 
     \section{Literature} \label{sec:literature}
-        \subsection{Forward and Reverse Mode}
+        \subsection{Automatic Differentiation}
             % References: Margossian, Elliot, Baydin, Wang
-            Automatic differentiation differentiates a program as a function $f:\mathbb{R}^n\to\mathbb{R}^m$/.
-            In general, there's two major techniques for doing so \cite{margossian2019review, elliot2018essence}.
-            We have forward mode, which differentiates the program recursively using the chain rule.
-            This means generating the derivatives in the same order of operations as the primal function, which is both intuitive and easy to implement.
+            Automatic Differentiation is a way of turning a program $f:\mathbb{R}^n\to\mathbb{R}^m$, into its derivative $f'$.
+            There are a couple of ways to differentiate $f$ besides AD though.
+            One could hand-code the differentiated function if it is small enough, and if only that derivative is needed, this might be the fastest way.
+            Another way is by using finite (or numeric) differentiation, applying some small change $\epsilon$ to each input to find the difference.
+            Finite differentiation is easy to code, but is prone to floating point and truncation errors, and it can be slow for functions in high dimensions.
+            Symbolic differentiation rewrites code to the differentiated version which gives exact results, however this is memory intensive, slow, and prone to expression swell.
+            Finally, automatic differentiation creates a differentiated function $f'$ without risk of expression swell or errors, and his highly applicable.
 
-            Reverse mode, like the name suggests evaluates the program in reverse of the execution order.
-            Rather than fixing the independent variables in the function, like in forward mode, reverse mode fixes the dependent variables and computes the so-called ``adjoint'' tangents which are achieved by performing a reverse pass over the computation tree.
+            A major advantage of AD is that it can be implemented to handle higher-order functions and program flow, which is harder or impossible for the other differentiation methods.
+            It can also do this efficiently, in $O(n)$ time, where $n$ is the size of the input function.
+            In general, automatic differentiation (AD) comes in two flavours: forward mode and reverse mode \cite{margossian2019review, elliot2018essence}.
+            Both methods use the chain rule to differentiate a complex function by breaking it down into its smallest components and then recombing them to get the final result.
 
-            The most important distinction between these two modes is what part of the Jacobian matrix they produce.
-            As forward mode evaluates all dependent variables for a single dependent variable, effectively calculating a column in the Jacobian.
-            This then also means that reverse mode -- evaluating all dependent variables based on a single fixed independent variable -- calculates a row of the Jacobian matrix of the function.
-            This is important for efficient computation.
-            Both forward-mode and reverse-mode can be calculated in polynomial time based on the size of the input program, however the dimensions of the Jacobian (or the number of independent and dependent variables) dictates which is more efficient.
-            Namely, the derivative of a program or function $f:\mathbb{R}^n\to\mathbb{R}^m$ can be calculated more efficiently using forward mode AD when the function has (a lot) more outputs than it has inputs -- so $m\gg n$, as only $n$ sweeps will be necessary to calculate the full Jacobian.
-            Conversely, reverse mode is more efficient when the number of inputs far outweigh the number of outputs, so $m\ll n$, requiring only $m$ sweeps.
+            \subsubsection{Forward Mode}
+                In forward mode AD, or forward accumulation, we calculate $f'$ by applying the chain rule repeatably to each subexpression.
+                In a pen-and-paper differentiation this would look like Equation \ref{eq:forwardmode}, where $\tfrac{\partial w_i}{\partial x}$ is the partial derivative of $x$ on some step $w_i$, where step $w_n$ would be equal to $f$ itself.
 
-            Reverse mode AD is especially current due to many applications in Artificial Intelligence using backpropagation, which can be considered a special case of reverse mode AD \cite{baydin2018survey}.
-            This is appropriate because many of these systems have many more inputs than outputs.
+                \begin{equation} \label{eq:forwardmode}
+                    \frac{\partial f}{\partial x}=\frac{\partial f}{\partial w_{n-1}}\frac{\partial w_{n-1}}{\partial x}=\frac{\partial f}{\partial w_{n-1}}\left(\frac{\partial w_{n-1}}{\partial w_{n-2}}\frac{\partial w_{n-2}}{\partial x}\right)=\dots
+                \end{equation}
+
+                Forward mode is pleasant to think about and implement because the calculation of the derivative follows the same `path' as the regular (primal) expression.
+                A way to implement this is by using a technique called dual numbers, which I will discuss in Section \ref{ssec:dualnumbers}.
+                
+                The main drawback of forward mode is that for a function with $n$ inputs and $m$ outputs, we would need to run the AD over each input, so $n$ times.
+                This is especially problematic if $n\gg m$, which unfortunately comes up quite a lot, especially in machine learning.
+
+            \subsubsection{Reverse Mode}
+                Like the name suggests, reverse mode AD, or reverse accumulation, calculates the derivative $f'$ of $f$ in the reverse order.
+                This hinges on the realization that while we can fix the output variables, and instead calculate the gradient by calculating the differentiation in the opposite direction.
+                So rather than $\tfrac{\partial f}{\partial x}$, we calculate $\tfrac{\partial x}{\partial f}$.
+                When we can again express this in an equation, Equation \ref{eq:reversemode}, where $w_i$ is step $i$ in the primal calculation, where $w_n$ would again be $f$.
+                It should also be noted that $\bar{w_i}=\tfrac{\partial f}{\partial w_i}$ is called ``the adjoint'' of $w_i$.
+                
+                \begin{equation} \label{eq:reversemode}
+                    \frac{\partial f}{\partial x}=\frac{\partial f}{\partial w_1}\frac{\partial w_1}{\partial x}=\left(\frac{\partial f}{\partial w_2}\frac{\partial w_2}{\partial w_1}\right)\frac{\partial w_1}{\partial x}=\dots
+                \end{equation}
+
+                Now, where forward mode required $n$ passes to generate the gradient of a function $f:\mathbb{R}^n\to\mathbb{R}^m$, reverse mode requires $m$ passes.
+                This means that if $n\gg m$ reverse mode works much more efficient than forward mode, and conversely if $n\ll m$ forward mode will be more efficient.
+                Reverse mode can also be implemented using dual numbers, with a small adjustment (see Section \ref{ssec:dualnumbers}).
+
+                Reverse mode AD is especially current, as it is a more generalized case of the backpropagation algorithm used in neural networks \cite{baydin2018survey,wang2019demystifying}.
+                The backpropagation algorithm is this specific case where, in general, $n\gg m$ for a function $f:\mathbb{R}^n\to\mathbb{R}^m$.
             
-        \subsection{Dual-Numbers}
-            % TODO: Why do we want to use dual-numbers?!
+        \subsection{Dual Numbers} \label{ssec:dualnumbers}
             % References: Krawiec, Smeding, Griewank, Wang
-            One of the techniques to actually implement automatic differentiation is using dual-numbers.
-            Dual-numbers is a technique where we replace scalar values by a tuple, like complex number.
-            Where complex numbers exists of a real and imaginary part, dual numbers exist of a regular ``primal'' part, and a differentiated ``dual'' part \cite{margossian2019review}.
+            One of the techniques to actually implement automatic differentiation is using dual numbers.
+            In dual numbers, we augment the ``primal'' scalars with a ``dual'' component.
+            This dual component will store the partial derivative (or information relating to it).
+            In a sense this dual component is similar to the imaginary component of a complex number, however it does not interact with the primal component like how the imaginary part interacts with the real part \cite{margossian2019review}.
+            In general we find dual numbers are mostly represented as tuples, with the first element being the primal part, and the second element being the dual part.
+
+            For forward mode AD, the implementation with dual numbers is quite straightforward.
+            In general, it can be easily implemented by operator overloading, where operators are rewritten to support dual numbers.
+            Then we can simply replace the input variables to the function with these dual numbers, and as long as all operations in the function support dual numbers we will get the dual numbers representing the primal and derivative outcomes at the end.
             
-            It should be noted that in regular computation, these parts do not affect each other like how the real and imaginary parts of complex numbers might.
-            Instead, the dual part of the number is updated for each part of the operations done on the primal part, to reflect the changes in either the forward or reverse derivative \cite{krawiec2022provably,smeding2022efficient}.
-            Forward-mode on dual numbers is then fairly easy to understand, in the same way we calculate the primal expression, we can calculate the dual expression by using dual operations.
-            Reverse-mode AD on dual numbers is a little more complicated, because we can't calculate the derivatives whilst we do the primal (forward) pass on the expression.
-            Instead, we prepare the dual part of the numbers for a second backwards pass over the expression tree to calculate the derivative with.
-            We find ourselves effectively performing a more generalized form of backpropagation \cite{wang2019demystifying} here, as we work our way back through the expression.
+            Equation \ref{eq:fdexample} provides a more concrete example of dual numbers for forward mode AD with an example multiplication, where $(x_i, \partial x_i)$ represents the dual number with the primal and dual part respectively.
 
-            Especially for reverse-mode on dual-numbers, some additional steps need to be taken to make sure efficiency can be preserved.
-            A notable example of this is preventing duplicate calculations.
-            Duplicate calculations can happen quickly if we just naively work through an expression, calculating the parts we need when we need them.
-            Instead, we it might be more efficient to calculate the dual expression in a ``tape'' or ``Wengert list'' \cite{griewank2008evaluating}.
-            The main downside of this is that if we express our expression like this, we'd lose any parallelism present in the program, as we're forced to work through the tape one item at the time.
+            \begin{equation} \label{eq:fdexample}
+                (x_1,\partial x_1)\times(x_2,\partial x_2)=(x_1\times x_2, x_1\times\partial x_2+x_2\times\partial x_1)
+            \end{equation}
 
-        \subsection{Parallelism}
-            % References: Paszke, Schenck, Shaikhha
-            Parallelism, especially on arrays, is also very current with the high interest in artificial intelligence.
-            For both evaluating and training artificial neural networks, which is mostly matrix and vector multiplication, parallelism can provide a much appreciated performance increase.
-            And while the backpropagation algorithm is a special case of reverse-mode differentiation, if we'd use the aforementioned dual-numbers approach with a tape, we'd lose the parallelism we had in the original program.
+            Dual numbers for reverse mode AD are also possible, but they are slightly more complicated.
+            The partial derivatives of steps in the expression are dependent on steps that happen further down, so we cannot immediately calculate the partial derivative.
+            Instead, a solution would be to have the dual part be a function akin to a backpropagator \cite{wang2019demystifying,smeding2022efficient}.
+            This means that the example of Equation \ref{eq:fdexample} for forward mode, becomes the example in Equation \ref{eq:rdexample} for reverse mode.
+            Since $\partial x_1$ and $\partial x_2$ are backpropagator functions, they have the form $\partial x_i:\mathbb{R}\to\mathbb{R}$, which is why they are presented with an argument $d$ in Equation \ref{eq:rdexample}.
+
+            \begin{equation} \label{eq:rdexample}
+                (x_1,\partial x_1)\times(x_2,\partial x_2)=\left(x_1\times x_2,\lambda d.\left(x_1\times(\partial x_2\ d) + x_2\times(\partial x_1\ d)\right)\right)
+            \end{equation}
+
+            It should be clear now that reverse mode, with its advantage for calculating certain gradients, is also more complex to implement.
+            For forward mode, the primal part and the dual part can be defined and calculated in one pass.
+            This means that finding the forward mode derivative $\fw(f)$ can be done in $O(f)$ time, where $f$ is the original primal function.
+            Unfortunately, getting reverse mode AD on dual numbers to that level is a little more in depth.
+            For starters, we effectively need to pass over the primal function twice: a forward pass to construct the backpropagators and a reverse pass to calculate the actual gradient.
+            This complicates the matter greatly, because the structure of the function or program is much less clear on the reverse pass.
+            Most importantly, as certain variables (or steps in the computation) are referenced multiple times, we will reach them that many times in the reverse pass, and risk calculating them multiple times as well.
+            For large computations, this is unacceptable, as this problem compounds exponentially with the size of the program (each duplicate computation call more duplicate computation).
+            A way to solve this duplication issue is by storing the derivatives on a ``tape'', ``trace'', or Wengert list \cite{griewank2008evaluating}.
+            This tape can be constructed on the forward pass, and effectively topologically sorts the derivative of the expression \cite{smeding2022efficient,krawiec2022provably}.
+            Now we can just calculate the backpropagators in the list one by one, to get the final derivative.
+            The major downside of this is that we flatten out any parallelism present in the function, and turn it into a linear list.
+
+            \subsubsection{Implementation Methods}
+                There are two main ways to implement automatic differentiation in modern programming languages.
+                First off, we have operator overloading, which extends the operators of a programming language to by adding support for use on new primitives or objects.
+                Imperative languages like Python allow operator overloading by implementing operator methods like \texttt{\_\_add\_\_} to classes, which is then called by the \texttt{+} operator.
+                In functional languages like Haskell, this can be done by extending instances like \texttt{Num} for use on new data classes.
+                Operator overloading is especially useful for forward mode AD, as it is generally easy to implement and intuitively provides tools for forward mode.
+                For reverse mode, implementation using operator overloading is much harder, as we need to store every intermediate step and then still do the reverse pass.
+                
+                Another major way to implement AD is by using source-code transformation.
+                Like the name suggest, source-code transformation looks at the entirety of the source-code and produces some `transformed' code, which in our case would be the differentiated program.
+                This is generally done as a preprocessing step for the compiler, and allows for greater overview of the entire program to be differentiated.
+                While source-code transformation can eliminate the need for a runtime tape to store intermediate values in, it is generally more complex to implement and complicates the compilation pipeline.
+
+        \subsection{Functional Array Parallelism}
+            To quickly process data, especially for example in neural networks, we use parallelism.
+            Specifically for my research, we are interested in Functional Array Parallelism.
+            Like the name suggests, this is parallelism on arrays in functional programming languages.
+            This array parallelism is very important for implementations of neural networks, which generally consist of matrices and vectors that need to have functions applied to, or be multiplied together.
+            The array parallelism allows us to exploit the architecture of hardware like GPUs to get much faster computation.
             
-            However, while not with tape, methods of maintaining parallelism in automatic differentiation are defintelitely possible.
-            This can for example be achieved on second-order languages by paying special attention to the nesting of parallelism in the primal program, and applying special compile-time program transformations to get parallelized forward and reverse AD \cite{schenck2022ad}.
-            The main drawback of this being that we're limited to a second-order programming language.
+            Functional array programming generally comes with two key functions.
+            First off, a `generate' function allows for creation of an array by providing the size of the array to create and either values or a function to populate the array with.
+            As we're talking about functional array languages, we generally can't allow null-types in our arrays.
+            Second, a `fold' function allows a associative binary function to reduce one or more dimensions of the array to a single value.
+            Getting the sum of an array is generally implemented using `fold'.
+            It should also be noted that many of these languages implement more specialized variants of `generate' and `fold', which can be more efficient than their generalized counterparts.
 
-            Of course, we'd rather avoid restricting the language by allowing higher-order functions.
-            This has also been done \cite{shaikhha2019efficient}, using loop transformation, however doing this makes it hard to prove correctness, and doesn't use dual-numbers.
+            For my research I will be using the Accelerate parallelized array language, an extension on Haskell.
 
-    \section{Research Questions and Goals} \label{sec:questions}
-        The main goal of my thesis will be to implement a dual-numbers program transformation for reverse-mode automatic differentiation, on top of the Accelerate array programming language for Haskell.
+            \subsubsection{AD and Functional Array Parallelism}
+                % References: Paszke, Schenck, Shaikhha
+                There are some examples of automatic differentiation implementations that support array parallelism.
+                
+                First off, Amir Shaikhha et al. \cite{shaikhha2019efficient} show efficient automatic differentiation on a functional array programming language.
+                They do this is for forward mode both with and without dual numbers, but prefer the use of direct source-to-source source-code transformations.
+
+                Secondly, Robert Schenck et al. \cite{schenck2022ad} show a method of performing both forward and reverse mode automatic differentiation on a parallelized functional array language.
+                Their array language only supports second-order functions, which allows them to eliminate the need for tape all-together.
+                Their language also uses nested parallelism, which isn't supported by Accelerate.
+
+                Finally, the Dex functional array programming language by Adam Paszke et al. \cite{paszke2021getting} was designed with both automatic differentiation and parallel programming in mind.
+                It performs reverse AD by using program transformations and reaches good performance doing so.
+                It also supports higher-order functions.
+                However they don't use dual numbers, which makes it hard to proof the correctness of their automatic differentiation.    
+
+    \section{Methodology} \label{sec:methods}
+        As briefly mentioned in Section \ref{sec:literature}, I'll be implementing a reverse mode automatic differentiation dual numbers approach in Accelerate for Haskell.
+        The main idea here is to make use of Generalized Algebraic Data Types (GADTs) to represent program structure using dual numbers, which can then be used by source-code transformation to create differentiated programs.
+        Using a standard ``tape'' will result in the computation losing it parallelization \cite{smeding2022efficient}, so we need an alternative that preserves some of the program structure.
+        While the exact details still need to be worked out, we discussed the use of a sort of hierarchical list to maintain program structure, or perhaps a directed acyclic graph with clear input and output nodes.
 
     \section{Planning} \label{sec:planning}
+        Phase two of this research project will start on Monday, December 19th 2023, and will finish on Sunday, July 30th 2023.
+        After deciding on a method to maintain parallelism, the algorithm needs to be implemented and evaluated.
+        Evaluation will be in terms of both speed and memory usage, in comparison to other reverse AD implementations.
+        This first evaluation will undoubtedly be followed by changes, improvements, and optimizations to the algorithm.
+        Finally, after the algorithm is finalized and evaluated again, the writing of the final paper happens.
+        
+        The following schedule will provide a rough outline for how I am planning for the project to go:
+        
+        \textbf{December 2022} will focus of writing this proposal, and defining exactly how a differentiated program in Accelerate can maintain their parallelism. This month also contains a week of Christmas break (week 52).
+
+        \textbf{January 2023} will focus on developing and implementing the first version of the AD algorithm.
+
+        \textbf{February 2023} will focus on evaluation of, further development of, and improvement to the first version algorithm.
+        
+        \textbf{March 2023} will focus on optimization of the algorithm.
+
+        \textbf{April 2023} will focus on evaluation and finalization of the final AD algorithm.
+        
+        \textbf{May 2023} will focus on starting the research paper.
+        
+        \textbf{June 2023} will focus on the research paper.
+        
+        \textbf{July 2023} will focus on finishing the research paper and the thesis defence presentation.
 
     \clearpage
     \bibliographystyle{acm}
