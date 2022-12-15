@@ -1,0 +1,15 @@
+\documentclass[a4paper,12pt]{article}
+
+\usepackage{amsfonts,amsmath,amssymb}
+
+\newcommand*{\prv}[1]{\partial #1}
+\newcommand*{\prw}[1]{\partial w_{#1}}
+
+\begin{document}
+    \begin{align*}
+        \frac{\prv{y}}{\prv{x}}&=\frac{\prv{y}}{\prw{1}}\frac{\prw{1}}{\prv{x}}\\
+        &=\left(\frac{\prv{y}}{\prw{2}}\frac{\prw{2}}{\prw{1}}\right)\frac{\prw{1}}{\prv{x}}\\
+        &=\left(\left(\frac{\prv{y}}{\prw{3}}\frac{\prw{3}}{\prw{2}}\right)\frac{\prw{2}}{\prw{1}}\right)\frac{\prw{1}}{\prv{x}}\\
+        &=\cdots
+    \end{align*}
+\end{document}
