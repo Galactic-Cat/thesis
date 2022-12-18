@@ -12,4 +12,51 @@
         &=\left(\left(\frac{\prv{y}}{\prw{3}}\frac{\prw{3}}{\prw{2}}\right)\frac{\prw{2}}{\prw{1}}\right)\frac{\prw{1}}{\prv{x}}\\
         &=\cdots
     \end{align*}
+
+    \begin{equation*}
+        f(x)+f(y)=f(x+y)
+    \end{equation*}
+
+    \begin{align*}
+        f(0)&=0\\
+        f(x)+f(y)&=f(x+y)
+    \end{align*}
+
+    \begin{align*}
+        \text{Wrap}^2[P]\ x\\
+        \\
+        \text{Interleave}^2:\ &O(\text{size}(x))\\
+        \textbf{D}^2_\sigma[P]:\ &O(\text{cost}(P\ x))\\
+        \text{Deinterleave}^2:\ &O(\text{size}(P\ x))\\
+        \\
+        \text{total}:\ &O(\text{cost}(P\ x)+\text{size}(x))
+    \end{align*}
+
+    \begin{equation*}
+        \text{snd}(\text{Wrap}^2[P]\ x)\ dy
+    \end{equation*}
+
+    \begin{equation*}
+        O(\text{cost}(P\ x)+\text{size}(x))
+    \end{equation*}
+
+    \begin{align*}
+        (\underline{\lambda}(z:\mathbb{R}).\text{SCotan}(0,\dots,0,z,0,\dots,0)):\ &O(\text{size}(x))\\
+        (\underline{\lambda}(z:\mathbb{R}).0_\text{Staged}):\ &O(\text{size}(x))\\
+        (\underline{\lambda}(z:\mathbb{R}).\text{SCall}\ d_1\ (\partial_1\textit{op}(\dots)(z))+_\text{Staged}\cdots+_\text{Staged}\ \text{SCall}\ d_n\ (\partial_n\textit{op}(\dots)(z))):\ &O(\text{size}(x))
+    \end{align*}
+
+    \begin{align*}
+        &(M,0,+)\\
+        &(M\to M,\text{id},\circ)
+    \end{align*}
+
+    \begin{align*}
+        &(\text{Staged}\ c,0_\text{Staged},+_\text{Staged})\\
+        &(\text{Staged}\ c\to\text{Staged}\ c,\text{id},\circ)
+    \end{align*}
+
+    \begin{equation*}
+        O((\text{cost}(P\ x)+\text{size}(x))\log(\text{cost}(P\ x)+\text{size}(x)))
+    \end{equation*}
 \end{document}

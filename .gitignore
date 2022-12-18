@@ -370,4 +370,6 @@ $RECYCLE.BIN/
 # VS Code 
 .vscode/
 
+# Miscellaneous
 research/paper-dualrev-20221108.pdf
+~$*.pptx
