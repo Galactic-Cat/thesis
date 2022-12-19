@@ -23,8 +23,8 @@
         The goal is to implement this using a dual-numbers approach, and on top of Accelerate, a parallelized array language extension for Haskell \cite{haskell}.
 
         Automatic differentiation (AD) is an approach for computers to differentiate programs as if they were mathematical functions.
-        Differentiation is useful for application all throughout science, and being able to do it on an efficient basis therefor becomes very important.
-        Current approaches can provide program transformations to create differentiated programs in polynomial time compared to the size of the input program.
+        Differentiation is useful for application all throughout science, and being able to do it on an efficient basis therefore becomes very important.
+        Current approaches can provide program transformations to create differentiated programs that have only constant overhead compared to the input program (for sequential programs).
         However, in these approaches using program transformation, complex structures in the program -- like parallelism -- are generally discarded.
         This is a shame, because many parallelized operations have parallelizable equivalents in the differentiated form.
         So discarding these structures means that the differentiated program can be much slower than the primal program, while it really does not have to be.
@@ -41,16 +41,17 @@
     \section{Literature} \label{sec:literature}
         \subsection{Automatic Differentiation}
             % References: Margossian, Elliot, Baydin, Wang
-            Automatic Differentiation is a way of turning a program $f:\mathbb{R}^n\to\mathbb{R}^m$, into its derivative $f'$.
-            There are a couple of ways to differentiate $f$ besides AD though.
+            Automatic Differentiation is a way of turning a program $f:\mathbb{R}^n\to\mathbb{R}^m$ into its derivative $f'$.
+            However, there are a couple of ways to differentiate $f$ besides AD.
             One could hand-code the differentiated function if it is small enough, and if only that derivative is needed, this might be the fastest way.
-            Another way is by using finite (or numeric) differentiation, applying some small change $\epsilon$ to each input to find the difference.
-            Finite differentiation is easy to code, but is prone to floating point and truncation errors, and it can be slow for functions in high dimensions.
+            Another way is by using finite differences (also known as numeric differentiation), applying some small change $\epsilon$ to each input to find the effect on the output.
+            Finite differences is easy to code, but is prone to floating point and truncation errors, and it can be slow for functions in high dimensions.
             Symbolic differentiation rewrites code to the differentiated version which gives exact results, however this is memory intensive, slow, and prone to expression swell.
-            Finally, automatic differentiation creates a differentiated function $f'$ without risk of expression swell or errors, and his highly applicable.
+            Finally, automatic differentiation creates a differentiated function $f'$ without risk of expression swell or errors, and is highly applicable.
 
             A major advantage of AD is that it can be implemented to handle higher-order functions and program flow, which is harder or impossible for the other differentiation methods.
-            It can also do this efficiently, in $O(n)$ time, where $n$ is the size of the input function.
+            It can also do this efficiently, with a constant overhead on the differentiated program with regards to the running time of the original program.
+            
             In general, automatic differentiation (AD) comes in two flavours: forward mode and reverse mode \cite{margossian2019review, elliot2018essence}.
             Both methods use the chain rule to differentiate a complex function by breaking it down into its smallest components and then recombing them to get the final result.
 
@@ -63,21 +64,61 @@
                 \end{equation}
 
                 Forward mode is pleasant to think about and implement because the calculation of the derivative follows the same `path' as the regular (primal) expression.
+                This is also expressed in the example in Table \ref{tab:forward}.
                 A way to implement this is by using a technique called dual numbers, which I will discuss in Section \ref{ssec:dualnumbers}.
                 
+                \begin{table}
+                    \centering
+                    \begin{tabular}[hbtp]{|l|l|}
+                        \hline
+                        Primal value & Derivative \\
+                        \hline
+                        $w_1=x_1$ & $\dot{w_1}=1$ (seed)\\
+                        $w_2=x_2$ & $\dot{w_2}=0$ (seed)\\
+                        $w_3=w_1\cdot w_2$ & $\dot{w_3}=w_2\cdot\dot{w_1}+w_1\cdot\dot{w_2}$ \\
+                        $w_4=\sin w_1$ & $\dot{w_4}=\cos w_1\cdot\dot{w_1}$ \\
+                        $w_5=f=w_3+w_4$ & $\dot{w_5}=\dot{f}=\dot{w_3}+\dot{w_4}$ \\
+                        \hline
+                    \end{tabular}
+                    \caption{Forward mode AD on a function $f(x_1,x_2)=\sin w_1+w_1w_2$, calculating $\tfrac{\partial f}{\partial x_1}$}
+                    \label{tab:forward}
+                \end{table}
+
                 The main drawback of forward mode is that for a function with $n$ inputs and $m$ outputs, we would need to run the AD over each input, so $n$ times.
                 This is especially problematic if $n\gg m$, which unfortunately comes up quite a lot, especially in machine learning.
 
             \subsubsection{Reverse Mode}
-                Like the name suggests, reverse mode AD, or reverse accumulation, calculates the derivative $f'$ of $f$ in the reverse order.
-                This hinges on the realization that while we can fix the output variables, and instead calculate the gradient by calculating the differentiation in the opposite direction.
-                So rather than $\tfrac{\partial f}{\partial x}$, we calculate $\tfrac{\partial x}{\partial f}$.
+                Like the name suggests, reverse mode AD, or reverse accumulation, calculates the derivative $f'$ of $f$ in the reverse execution order.
+                This hinges on the realization that while we can also fix the output variables, and instead calculate the gradient by calculating the differentiation in the opposite direction.
+                So rather than $\tfrac{\partial f}{\partial x}$ for every $x$ in the input, we calculate $\tfrac{\partial f}{\partial x}$ for every $f$ in the output.
                 When we can again express this in an equation, Equation \ref{eq:reversemode}, where $w_i$ is step $i$ in the primal calculation, where $w_n$ would again be $f$.
+                The reverse mode version of the example in Table \ref{tab:forward} can be found in Table \ref{tab:reverse}.
                 It should also be noted that $\bar{w_i}=\tfrac{\partial f}{\partial w_i}$ is called ``the adjoint'' of $w_i$.
+                
+                Now, with dual numbers AD, to actually get to calculating the reverse derivative, we first need to do a forward pass over the primal function to set up backpropagators.
+                Then the reverse pass becomes just calling the final backpropagator with some seed value (usually 1).
+                This means that if we have $m$ outputs, we'll have $m$ backpropagators to call, just like we needed to make $n$ sweeps in forward mode for $n$ inputs.
                 
                 \begin{equation} \label{eq:reversemode}
                     \frac{\partial f}{\partial x}=\frac{\partial f}{\partial w_1}\frac{\partial w_1}{\partial x}=\left(\frac{\partial f}{\partial w_2}\frac{\partial w_2}{\partial w_1}\right)\frac{\partial w_1}{\partial x}=\dots
                 \end{equation}
+
+                \begin{table}
+                    \centering
+                    \begin{tabular}[hbtp]{|l|}
+                        \hline
+                        Reverse Derivative \\
+                        \hline
+                        $\bar{w_5}=\bar{f}=1$ (seed) \\
+                        $\bar{w_4}=\bar{w_5}$ \\
+                        $\bar{w_3}=\bar{w_5}$ \\
+                        $\bar{w_2}=\bar{w_2}\cdot w_1$ \\
+                        $\bar{w_1}=\bar{w_3}\cdot w_2+\bar{w_4}\cdot\cos w_1$ \\
+                        \hline
+                    \end{tabular}
+                    \caption{Reverse mode AD on a function $f(x_1,x_2)=\sin x_1+x_1x_2$, calculating $\tfrac{\partial f}{\partial\vec{x}}$}
+                    \label{tab:reverse}
+                \end{table}
 
                 Now, where forward mode required $n$ passes to generate the gradient of a function $f:\mathbb{R}^n\to\mathbb{R}^m$, reverse mode requires $m$ passes.
                 This means that if $n\gg m$ reverse mode works much more efficient than forward mode, and conversely if $n\ll m$ forward mode will be more efficient.
@@ -108,20 +149,20 @@
             The partial derivatives of steps in the expression are dependent on steps that happen further down, so we cannot immediately calculate the partial derivative.
             Instead, a solution would be to have the dual part be a function akin to a backpropagator \cite{wang2019demystifying,smeding2022efficient}.
             This means that the example of Equation \ref{eq:fdexample} for forward mode, becomes the example in Equation \ref{eq:rdexample} for reverse mode.
-            Since $\partial x_1$ and $\partial x_2$ are backpropagator functions, they have the form $\partial x_i:\mathbb{R}\to\mathbb{R}$, which is why they are presented with an argument $d$ in Equation \ref{eq:rdexample}.
+            Since $\partial x_1$ and $\partial x_2$ are backpropagator functions, they have the form $\partial x_i:\mathbb{R}\to c$, where $c$ is the domain of the primal function ($\mathbb{R}^n$ in our examples), which is why they are presented with an argument $d$ in Equation \ref{eq:rdexample}.
 
             \begin{equation} \label{eq:rdexample}
-                (x_1,\partial x_1)\times(x_2,\partial x_2)=\left(x_1\times x_2,\lambda d.\left(x_1\times(\partial x_2\ d) + x_2\times(\partial x_1\ d)\right)\right)
+                (x_1,\partial x_1)\times(x_2,\partial x_2)=\left(x_1\times x_2,\lambda d.\left(\partial x_2\ (x_1\times d)+\partial x_1\ (x_2\times d)\right)\right)
             \end{equation}
 
             It should be clear now that reverse mode, with its advantage for calculating certain gradients, is also more complex to implement.
             For forward mode, the primal part and the dual part can be defined and calculated in one pass.
-            This means that finding the forward mode derivative $\fw(f)$ can be done in $O(f)$ time, where $f$ is the original primal function.
+            This means that finding the forward mode derivative $\fw{f}$ can be done in time complexity equal to $f$ with some constant overhead, where $f$ is the original primal function.
             Unfortunately, getting reverse mode AD on dual numbers to that level is a little more in depth.
             For starters, we effectively need to pass over the primal function twice: a forward pass to construct the backpropagators and a reverse pass to calculate the actual gradient.
             This complicates the matter greatly, because the structure of the function or program is much less clear on the reverse pass.
-            Most importantly, as certain variables (or steps in the computation) are referenced multiple times, we will reach them that many times in the reverse pass, and risk calculating them multiple times as well.
-            For large computations, this is unacceptable, as this problem compounds exponentially with the size of the program (each duplicate computation call more duplicate computation).
+            Most importantly, as certain variables (or steps in the computation) are referenced multiple times, we will reach them that many times in the reverse pass, and risk calling their backpropagators multiple times as well.
+            For large computations, this is unacceptable, as this problem compounds exponentially with the size of the program (each duplicate computation calls more duplicate computations).
             A way to solve this duplication issue is by storing the derivatives on a ``tape'', ``trace'', or Wengert list \cite{griewank2008evaluating}.
             This tape can be constructed on the forward pass, and effectively topologically sorts the derivative of the expression \cite{smeding2022efficient,krawiec2022provably}.
             Now we can just calculate the backpropagators in the list one by one, to get the final derivative.
@@ -130,13 +171,13 @@
             \subsubsection{Implementation Methods}
                 There are two main ways to implement automatic differentiation in modern programming languages.
                 First off, we have operator overloading, which extends the operators of a programming language to by adding support for use on new primitives or objects.
-                Imperative languages like Python allow operator overloading by implementing operator methods like \texttt{\_\_add\_\_} to classes, which is then called by the \texttt{+} operator.
-                In functional languages like Haskell, this can be done by extending instances like \texttt{Num} for use on new data classes.
+                Imperative languages like Python allow operator overloading by implementing operator methods like \texttt{\_\_add\_\_}\ to classes, which is then called by the \texttt{+} operator.
+                In functional languages like Haskell, this can be done by extending instances like \texttt{Num} for use on new data types.
                 Operator overloading is especially useful for forward mode AD, as it is generally easy to implement and intuitively provides tools for forward mode.
                 For reverse mode, implementation using operator overloading is much harder, as we need to store every intermediate step and then still do the reverse pass.
                 
                 Another major way to implement AD is by using source-code transformation.
-                Like the name suggest, source-code transformation looks at the entirety of the source-code and produces some `transformed' code, which in our case would be the differentiated program.
+                Like the name suggests, source-code transformation looks at the entirety of the source-code and produces some `transformed' code, which in our case would be the differentiated program.
                 This is generally done as a preprocessing step for the compiler, and allows for greater overview of the entire program to be differentiated.
                 While source-code transformation can eliminate the need for a runtime tape to store intermediate values in, it is generally more complex to implement and complicates the compilation pipeline.
 
@@ -150,7 +191,7 @@
             Functional array programming generally comes with two key functions.
             First off, a `generate' function allows for creation of an array by providing the size of the array to create and either values or a function to populate the array with.
             As we're talking about functional array languages, we generally can't allow null-types in our arrays.
-            Second, a `fold' function allows a associative binary function to reduce one or more dimensions of the array to a single value.
+            Second, a `fold' function allows an associative binary function to reduce one or more dimensions of the array to a single value.
             Getting the sum of an array is generally implemented using `fold'.
             It should also be noted that many of these languages implement more specialized variants of `generate' and `fold', which can be more efficient than their generalized counterparts.
 
@@ -160,14 +201,17 @@
                 % References: Paszke, Schenck, Shaikhha
                 There are some examples of automatic differentiation implementations that support array parallelism.
                 
-                First off, Amir Shaikhha et al. \cite{shaikhha2019efficient} show efficient automatic differentiation on a functional array programming language.
+                First off, Amir Shaikhha et al.\ \cite{shaikhha2019efficient} show efficient automatic differentiation on a functional array programming language.
                 They do this is for forward mode both with and without dual numbers, but prefer the use of direct source-to-source source-code transformations.
+                A very interesting part of their paper is that they show how to calculate the gradient of a function using forward-mode AD in a way that's as efficient as reverse-mode.
+                Furthermore, they also show some interesting work on loop fusion (and other transformations), which may prove useful, as fusing operations is a major part of Accelerate.
 
-                Secondly, Robert Schenck et al. \cite{schenck2022ad} show a method of performing both forward and reverse mode automatic differentiation on a parallelized functional array language.
-                Their array language only supports second-order functions, which allows them to eliminate the need for tape all-together.
+                Secondly, Robert Schenck et al.\ \cite{schenck2022ad} show a method of performing both forward and reverse mode automatic differentiation on a parallelized functional array language.
+                Their array language only supports second-order functions, which allows them to eliminate the need for tape altogether.
                 Their language also uses nested parallelism, which isn't supported by Accelerate.
+                This paper goes very in-depth on the transformations of operations common in (parallelized) functional array languages, and how to implement them using dual numbers.
 
-                Finally, the Dex functional array programming language by Adam Paszke et al. \cite{paszke2021getting} was designed with both automatic differentiation and parallel programming in mind.
+                Finally, the Dex functional array programming language by Adam Paszke et al.\ \cite{paszke2021getting} was designed with both automatic differentiation and parallel programming in mind.
                 It performs reverse AD by using program transformations and reaches good performance doing so.
                 It also supports higher-order functions.
                 However they don't use dual numbers, which makes it hard to proof the correctness of their automatic differentiation.    
