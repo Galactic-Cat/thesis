@@ -21,6 +21,9 @@ module Lang (Expression (Let, Res), RHS (Add, Sub, Mul, ConsArray, EmptyArray, F
         Snd        ::                                          Idx env (a, a)       -> RHS env a
         Sub        :: (Num a)      => Idx env a             -> Idx env a            -> RHS env a
         Val        ::                                          a                    -> RHS env a
+        Def        ::                                          Expression env a     -> RHS env a
+
+    -- NOTE: AST lambda calculus of ANV (als AST)
 
     data Idx env a where
         Z :: Idx (a ': env) a
@@ -32,6 +35,8 @@ module Lang (Expression (Let, Res), RHS (Add, Sub, Mul, ConsArray, EmptyArray, F
 
     data Array a = AEmpty | ACons (Array a) a | ADim (Array a) (Array a) | ASingle a
         deriving (Show)
+    
+    data Array' a = ZeroDim a | MultiDim (Int -> Array' a)
 
     eval :: Environment env -> Expression env a -> a
     eval n (Let rhs lhs) = eval (NCons n (evalRHS n rhs)) lhs
