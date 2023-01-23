@@ -27,6 +27,7 @@ library
   exposed-modules:
       Lang
       Lib
+      Nos
   other-modules:
       Paths_toys
   hs-source-dirs:
