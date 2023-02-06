@@ -29,6 +29,7 @@ library
       Lang
       Nos
       Rev
+      Tac
   other-modules:
       Paths_toys
   hs-source-dirs:
