@@ -73,6 +73,27 @@ module Tac () where
     envLookup (NCons _  e) Z     = e
     envLookup (NCons ns _) (S r) = envLookup ns r
 
+    teval :: Environment env -> Trace env a -> a
+    teval _ (TInput tv _)     = tv
+    teval n (TLet   td t1)    = teval (NCons n (teval n td)) t1
+    teval _ (TLift  tv)       = tv
+    teval n (TOp1   op t1)    =
+        case op of
+            Neg -> not $ teval n t1
+            Sin -> sin $ teval n t1
+    teval n (TOp2   op t1 t2) = 
+        case op of
+            Add -> teval n t1 +  teval n t2
+            Equ -> teval n t1 == teval n t2
+            Gt  -> teval n t1 >  teval n t2
+            Gte -> teval n t1 >= teval n t2
+            Lt  -> teval n t1 <  teval n t2
+            Lte -> teval n t1 <= teval n t2
+            Mul -> teval n t1 *  teval n t2
+            Neq -> teval n t1 /= teval n t2
+            Sub -> teval n t1 -  teval n t2
+    teval n (TRef   rf)       = envLookup n rf
+
     trace :: Environment env -> Expression env a -> Trace env a
     trace n (EApply  ef e1)    = TLift $ eeval n ef (eeval n e1)
     -- EFix
