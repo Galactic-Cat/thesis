@@ -25,11 +25,7 @@ source-repository head
 
 library
   exposed-modules:
-      Dag
-      Lang
-      Nos
-      Rev
-      Tac
+      Unt
   other-modules:
       Paths_toys
   hs-source-dirs:
