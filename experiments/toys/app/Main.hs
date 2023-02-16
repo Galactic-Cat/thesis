@@ -4,10 +4,8 @@ module Main (main) where
         eval,
         trace,
         Expression (ERef, ELet, EOp1, ELambda, EApply, EOp2),
-        Idx (Z, S),
         Op1 (Sin),
         Op2 (Add),
-        Trace,
         Value (VNum))
 
     a :: Float
@@ -18,17 +16,17 @@ module Main (main) where
     eTest :: Expression
     eTest = asFunction
         (ELet
-            (ELet
-                (EOp1 Sin (ERef Z))                  -- env: [w, x, y]
-                (ELambda                             -- env: [z, w, x, y]
-                    (EOp2 Add (ERef (S Z)) (ERef Z))
+            "f" (ELet
+                "w" (EOp1 Sin (ERef "x"))
+                (ELambda "z"
+                    (EOp2 Add (ERef "w") (ERef "z"))
                 )
-            )                                        -- env: [f, x, y]
-            (EApply (ERef Z)
-                (EOp2 Add (ERef (S Z)) (ERef (S (S Z))))
+            )
+            (EApply (ERef "f")
+                (EOp2 Add (ERef "x") (ERef "y"))
             )
         )
-        [VNum a, VNum b]
+        [("x", VNum a), ("y", VNum b)]
 
     hTest :: Float -> Float -> Float
     hTest x y =
@@ -43,7 +41,7 @@ module Main (main) where
             in  let r2 = r1 + w
                 in  r2
 
-    (tv, tt) = trace [] eTest
+    (tv, tt) = trace [] eTest []
 
     main :: IO ()
     main = do
@@ -51,4 +49,5 @@ module Main (main) where
         print $ htTest a b
         print $ eval [] eTest
         print tv
-        print tt
+        print (head (tail tt))
+        mapM_ print tt
