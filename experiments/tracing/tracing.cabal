@@ -26,7 +26,6 @@ source-repository head
 library
   exposed-modules:
       Expression
-      Lib
       Trace
   other-modules:
       Paths_tracing
