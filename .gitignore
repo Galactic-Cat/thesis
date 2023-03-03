@@ -372,4 +372,6 @@ $RECYCLE.BIN/
 
 # Miscellaneous
 research/paper-dualrev-20221108.pdf
+colloquium/attended/memes/templates/
+colloquium/attended/*.pdf
 ~$*.pptx
