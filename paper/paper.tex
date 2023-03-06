@@ -1,0 +1,57 @@
+\documentclass[twocolumn]{paper}
+
+\usepackage{appendix}
+\usepackage[english]{babel}
+\usepackage{etoolbox}
+\usepackage{framed}
+\usepackage{hyperref}
+\usepackage{amsmath, amssymb}
+\usepackage[a4paper,margin=1.5in]{geometry}
+\usepackage{graphicx}
+\usepackage[utf8]{inputenc}
+\usepackage{multirow}
+\usepackage{wrapfig}
+\usepackage[x11names]{xcolor}
+\usepackage{listings}
+\usepackage{mathtools}
+
+\tolerance=1
+\emergencystretch=\maxdimen
+\hyphenpenalty=10000
+\hbadness=10000
+
+\hypersetup{
+    colorlinks,
+    linkcolor={green!50!black},
+    citecolor={cyan!50!black},
+    urlcolor={blue!80!black}
+}
+
+\setlength{\parskip}{1em}
+\setlength{\parindent}{0pt}
+
+\newcommand{\cn}{\textsc{[citation needed]}}
+\newcommand{\deq}{\ensuremath{\vcentcolon=}}
+
+\lstnewenvironment{deflisting}[1][]
+    {\lstset{float=*tb,frame=single,captionpos=b,mathescape=true,escapeinside={(*}{*)},#1}}
+    {}
+
+\title{Paper}
+\author{Simon van Hus\\6147879\\s.vanhus@students.uu.nl}
+\date{\today}
+
+\begin{document}
+    \maketitle
+
+    \begin{abstract}
+        Abstract.
+    \end{abstract}
+
+    \input{sections/tracing}
+
+    \clearpage
+    \appendix
+    % \bibliographystyle{acm}
+    % \bibliography{references}
+\end{document}
