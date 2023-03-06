@@ -9,6 +9,21 @@
     The $op(t_1,\dotsb,t_n)$ term represents a basic mathematical operation of the type $\mathbb{R}_n\to\mathbb{R}$.
     It should also be noted that the type $\sigma\to\tau$
 
+    \begin{deflisting}[caption={Source language},label=lst:source]
+    (*\textbf{Types:}*)
+        $\sigma,\tau\deq\mathbb{R}\ |\ \sigma\to\tau\ |\ \top\ |\ \bot$
+
+    (*\textbf{Terms:}*)
+        $s,t\deq$
+        $\ \ s\ t$
+        $|\ \lambda(x:\tau).t$
+        $|\ op(t_1,\dotsb,t_n)$
+        $|\ r\in\mathbb{R}$
+        $|\ b\in\{\top,\bot\}$
+        $|\ $let $s$ in $t$
+        $|\ $if $s:\{\top,\bot\}$ then $t_\top$ else $t_\bot$
+    \end{deflisting}
+
     Now with source language defined, we need to formalize exactly what we expect a trace function to do with a program written in the source language.
     We have a couple of criteria for the result of our tracing function:
     \begin{enumerate}
@@ -24,21 +39,6 @@
     So, we define a target language that meets these criteria in Listing \ref{lst:target}.
     We can clearly see that we're left only with the basic operations ($op(t_1,\dotsb,t_n)$), real numbers, and Booleans.
     Now all that remains is to actually transform a program in the source language to a trace in the target language.
-
-    \begin{deflisting}[caption={Source language},label=lst:source]
-    (*\textbf{Types:}*)
-        $\sigma,\tau\deq\mathbb{R}\ |\ \sigma\to\tau\ |\ \top\ |\ \bot$
-
-    (*\textbf{Terms:}*)
-        $s,t\deq$
-        $\ \ s\ t$
-        $|\ \lambda(x:\tau).t$
-        $|\ op(t_1,\dotsb,t_n)$
-        $|\ r\in\mathbb{R}$
-        $|\ b\in\{\top,\bot\}$
-        $|\ $let $s$ in $t$
-        $|\ $if $s:\{\top,\bot\}$ then $t_\top$ else $t_\bot$
-    \end{deflisting}
 
     \begin{deflisting}[caption={Target language},label=lst:target]
     (*\textbf{Types:}*)
