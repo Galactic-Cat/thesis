@@ -1,51 +1,110 @@
 \section{Tracing}
-    When we trace a function we evaluate it whilst keeping track of every basic operation, so we have a linear list of operations to reach the result.
-    This sounds fairly straightforward, but is not quite as trivial as it seems.
-    Tracing is rarely a well-defined term, which is interesting because it's a technique that is used quite a lot.
+    Tracing is a technique that is used a lot but often not particularly well-defined.
+    The main idea and intuition behind tracing is that we take in a program and an input to said program, and output a list of operations the program used to produce the result it did.
+    This list of operations can be seen as a program itself, sometimes referred to as a ``single-line program''\cn, to produce the result of the original program.
+    The single-line referred to here, is a lack of branching paths in the program, thus eliminating all control-flow.
+    This clearly highlights the first criteria for a tracing program: it must eliminate all branching.
+    
+    Furthermore, as we aim to find only the main through line a program took for a set of inputs, we can also aim for eliminating any superflous structure in that program.
+    This mainly means that we can eliminate functions, because we are just interested in what happens in the body of those functions.
+    This then forms the basis for our second criterium: a tracing program must eliminate any superflous structure that we are not interested in.
+    However, this criterium is still a little vague.
+    For instance, we can imagine maybe tracing away things like tuples, arrays, or other collections of values.
+    After all, we might only operate on the values, not on their collections.
+    Where we draw the line on what structures we deem superflous will therefor impact the shape of our trace.
+    However, we do know that destructuring collections into single values could result in an explosion to the size of our trace, depending on the size of the collection.
+    Thus, it we might find it acceptable to leave these collections in.
+    While we will not go into data collections in this section any further, it is important that the notion of ``superflous'' program structure, might change to meet our needs.
 
-    To define tracing let us start by defining a source language, with which to write a function we'd want to trace.
-    This source language is a basic lambda calculus expressed in a Haskell-like syntax in Listing \ref{lst:source}.
-    This listing shows support for real numbers, functions, and Boolean values as types, and lambda calculus terms.
-    The $op(t_1,\dotsb,t_n)$ term represents a basic mathematical operation of the type $\mathbb{R}_n\to\mathbb{R}$.
-    It should also be noted that the type $\sigma\to\tau$
+    For now, our final criterium is about what the trace actually does.
+    We have talked about eliminating control-flow, and eliminating functions, but what do we actually expect to keep intact?
+    To actually achieve the single-line program we discussed, we must maintain any operations we actually perform on the inputs or other data that are relevant to our output.
+    This comes down to preserving all mathematical and Boolean operations.\\
+    In summary we set the following criteria for a tracing program:
+    \begin{enumerate}
+        \item All branching/control-flow is eliminated.
+        \item All superflous structure (like functions) is eliminated.
+        \item We record all basic mathematical and Boolean operations.
+    \end{enumerate}
 
-    \begin{deflisting}[caption={Source language},label=lst:source]
-    (*\textbf{Types:}*)
-        $\sigma,\tau\deq\mathbb{R}\ |\ \sigma\to\tau\ |\ \top\ |\ \bot$
-
-    (*\textbf{Terms:}*)
-        $s,t\deq$
-        $\ \ s\ t$
-        $|\ \lambda(x:\tau).t$
-        $|\ op(t_1,\dotsb,t_n)$
-        $|\ r\in\mathbb{R}$
-        $|\ b\in\{\top,\bot\}$
-        $|\ $let $s$ in $t$
-        $|\ $if $s:\{\top,\bot\}$ then $t_\top$ else $t_\bot$
+    To actually implement the trace we can view tracing as a source code transformation from a regular program (and input) written in a source language to a traced program in a target language.
+    We define the source language in Listing \ref{lst:source}.
+    Here we have basic lambda calculus with added control flow in if-then-else statements, and room for variable references.
+    We denote any term ${s\in S}$ with as ${s:D}$ if we require the term to evaluate to the domain $D$.
+    It should also be noted that we have collected all our basic operations as ${op(s_1,\dotsb,s_n)}$ for any operation of the form: ${R_n\to R}$ ($+$, $-$, etc.), $R{_n\to\{\top,\bot\}}$ ($=$, $>$, etc.), and ${\{\top,\bot\}_n\to\{\top,\bot\}}$ ($=$ or $\neq$ on Booleans).
+    
+    \begin{deflisting}[caption=Source Language,label=lst:source,gobble=8]
+        (*\textbf{Values:}*)
+            $V\df\mathbb{R}\cup\{\top,\bot\}$
+        
+        (*\textbf{Terms:}*)
+            $S\df\{$
+                $s_1\ s_2$, (*\textit{(Application)}*)
+                $v\in V$, (*\textit{(Bare real numbers or Boolean values)}*)
+                $\lambda(x:V).s$,
+                let $s_1:V$ in $s_2$,
+                if $s_?:\{\top,\bot\}$ then $s_\top$ else $s_\bot$,
+                $op(s_1:V,\dotsb,s_n:V)$,
+                $x:\text{String}$ (*\textit{(Variable reference)}*)
+            $\}$
     \end{deflisting}
 
-    Now with source language defined, we need to formalize exactly what we expect a trace function to do with a program written in the source language.
-    We have a couple of criteria for the result of our tracing function:
-    \begin{enumerate}
-        \item All branches should be eliminated
-        \item All functions should be eliminated
-        \item A record of each performed operation should be kept
-    \end{enumerate}
-    We can assure that these specifications are met, by defining a target language which excludes operations that violate these criteria.
-    For instance, if we eliminate lambdas and if-then-else statements, we have already fulfilled criteria 1 and 2.
-    The third criteria doesn't talk explicitly about what we should eliminate from the source language, but it does tell us we need to preserve all basic operations.
-    After all, if we resolve even those, we'll end up with just the final result -- which would be the same as just evaluating the program.
+    We continue by defining the target language in Listing \ref{lst:target}.
+    We see here that we've lost most of our terms in accordance to our three criteria: getting rid of functions means we can get rid of lambda's, and getting rid of branching means getting rid of if-then-else statements.
+    Also, let-bindings will be easily resolved in the next steps.
+    We should also note that the values of $W$ are just the values of $V$, but now with an additional string that serves as an identifier to the value.
+    This is so that when we have our values in our trace, we can keep track where they came from.
+    We'll we assume that $V\Leftrightarrow W$, such that we can lift values in $V$ to $W$ and vice-versa.
+    In reality this just means that a value that is created in the computation (and thus has no name), will get a generated name to keep track of it.
 
-    So, we define a target language that meets these criteria in Listing \ref{lst:target}.
-    We can clearly see that we're left only with the basic operations ($op(t_1,\dotsb,t_n)$), real numbers, and Booleans.
-    Now all that remains is to actually transform a program in the source language to a trace in the target language.
+    \begin{deflisting}[caption=Target Language,label=lst:target,gobble=8]
+        (*\textbf{Values:}*)
+            $W\df\{(\text{String},\mathbb{R}),(\text{String},\{\top,\bot\})\}$
 
-    \begin{deflisting}[caption={Target language},label=lst:target]
-    (*\textbf{Types:}*)
-        $\sigma,\tau\deq\mathbb{R}\ |\ \sigma\to\tau\ |\ \top\ |\ \bot$
+        (*\textbf{Terms:}*)
+            $T\df\{$
+                $w\in W$,
+                $op(t_1:W,\dotsb,t_n:W)$,
+                $x:\text{String}$
+            $\}$
+    \end{deflisting}
 
-    (*\textbf{Terms:}*)
-        $\ \ op(t_1,\dotsb,t_n)$
-        $|\ r\in\mathbb{R}$
-        $|\ b\in\{\top,\bot\}$
+    So, all that remains is to transform our source language into our target language through tracing.
+    We can do this by looking at each of our source terms and transforming them into target terms.
+    To do this, we define need to define an environment ${\Gamma:\text{String}\to W^*}$, here ${W^*}$ is defined as ${W^*\df W\cup\{W\to W\}}$.
+    ${W^*}$ requires functions ${W\to W}$ to resolve lambda functions, as we will see.
+    We will also define the function ${\text{eval}:\Gamma\to S\to V}$ as our evaluation function, and ${\text{trace}:\Gamma\to S\to (W,[(\text{String},T)])}$ as our tracing function, where the tracing function returns both the value of the expression provided, and the trace of that expression as a list of tuples of named steps.
+    This then finally allows us to create the program transformation in Listing \ref{lst:trans}.
+
+    In Listing \ref{lst:trans}, we see the program transformation from the regular program in the source language to the traced program in the tracing language.
+    We represent the return value of the trace function as a tuple consisting of a value and a unsorted list of operations performed.
+    It should be noted that this unsorted list has all its values as tuples consisting of an identifier and the actual trace step.
+    This is why this list can stay unsorted, as all values that are referred to by certain steps are named as such in this list.
+    This might also help us implementing parallelism on this trace later on.
+
+    \begin{deflisting}[caption=Tracing transformation,label=lst:trans,gobble=8]
+        $\text{trace}(\Gamma,s_1\ s_2)\Rightarrow(w_a, t_1\cup t_2\cup t_a)$
+            $(w_1,t_1)\Leftarrow\text{trace}(\Gamma,s_1)$
+            $(w_2,t_2)\Leftarrow\text{trace}(\Gamma,s_2)$
+            $(w_a,t_a)\Leftarrow w_a(w_2)$
+
+        $\text{trace}(\Gamma, v\in V)\Rightarrow(v,\emptyset)$
+
+        $\text{trace}(\Gamma, \lambda(x).s)\Rightarrow(\lambda(x).\text{trace}(\lambda\cup\{x\}, s),\emptyset)$
+
+        $\text{trace}(\Gamma, \texttt{let}\ s_1\ \texttt{in}\ s_2)\Rightarrow(w_2,t_1\cup t_2)$
+            $(w_1,t_1)\Leftarrow\text{trace}(\Gamma,s_1)$
+            $(w_2,t_2)\Leftarrow\text{trace}(\Gamma\cup w_1,s_2)$
+
+        $\text{trace}(\Gamma, \texttt{if}\ s_?\ \texttt{then}\ s_\top\ \texttt{else}\ s_\bot)\Rightarrow(w_a,t_?\cup t_a)$
+            $(w_?,t_?)\Leftarrow\text{trace}(\Gamma,s_?)$
+            $(w_a,t_a)\Leftarrow\texttt{if}\ w_?\ \texttt{then}\ \text{trace}(s_\top)\ \texttt{else}\ \text{trace}(s_\bot)$
+        
+        $\text{trace}(\Gamma, op(s_1,\dotsb,s_n))\Rightarrow(w_{op},\{op(w_1,\dotsb,w_n)\}\cup(t_1\cup\dotsb\cup t_n))$
+            $(w_1,t_1)\Leftarrow\text{trace}(\Gamma, s_1)$
+                $\vdots$
+            $(w_n,t_n)\Leftarrow\text{trace}(\Gamma, s_n)$
+            $w_{op}\Leftarrow\text{eval}(op(w_1,\dotsb,w_n))$
+
+        $\text{trace}(\Gamma, x)\Rightarrow(x\in\Gamma,\emptyset)$
     \end{deflisting}

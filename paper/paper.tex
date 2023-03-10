@@ -1,4 +1,4 @@
-\documentclass[twocolumn]{paper}
+\documentclass{paper}
 
 \usepackage{appendix}
 \usepackage[english]{babel}
@@ -9,11 +9,12 @@
 \usepackage[a4paper,margin=1.5in]{geometry}
 \usepackage{graphicx}
 \usepackage[utf8]{inputenc}
-\usepackage{multirow}
+\usepackage{multicol}
 \usepackage{wrapfig}
 \usepackage[x11names]{xcolor}
 \usepackage{listings}
 \usepackage{mathtools}
+\usepackage{xcolor}
 
 \tolerance=1
 \emergencystretch=\maxdimen
@@ -30,11 +31,11 @@
 \setlength{\parskip}{1em}
 \setlength{\parindent}{0pt}
 
-\newcommand{\cn}{\textsc{[citation needed]}}
-\newcommand{\deq}{\ensuremath{\vcentcolon=}}
+\newcommand{\cn}{\textsuperscript{\color{red}[cite me]}}
+\newcommand{\df}{\coloneqq}
 
 \lstnewenvironment{deflisting}[1][]
-    {\lstset{float=*tb,frame=single,captionpos=b,mathescape=true,escapeinside={(*}{*)},#1}}
+    {\lstset{float=tbhp,frame=single,captionpos=b,mathescape=true,escapeinside={(*}{*)},#1}}
     {}
 
 \title{Paper}
