@@ -12,14 +12,14 @@
 \usepackage{multicol}
 \usepackage{wrapfig}
 \usepackage[x11names]{xcolor}
-\usepackage{listings}
+% \usepackage{listings}
 \usepackage{mathtools}
 \usepackage{xcolor}
 
-\tolerance=1
-\emergencystretch=\maxdimen
-\hyphenpenalty=10000
-\hbadness=10000
+% \tolerance=1
+% \emergencystretch=\maxdimen
+% \hyphenpenalty=10000
+% \hbadness=10000
 
 \hypersetup{
     colorlinks,
@@ -32,11 +32,13 @@
 \setlength{\parindent}{0pt}
 
 \newcommand{\cn}{\textsuperscript{\color{red}[cite me]}}
+\newcommand{\cc}[1]{{\color{cyan}#1}}
 \newcommand{\df}{\coloneqq}
+\renewcommand{\|}{\ |\ }
 
-\lstnewenvironment{deflisting}[1][]
-    {\lstset{float=tbhp,frame=single,captionpos=b,mathescape=true,escapeinside={(*}{*)},#1}}
-    {}
+% \lstnewenvironment{deflisting}[1][]
+%     {\lstset{float=tbhp,frame=single,captionpos=b,mathescape=true,escapeinside={(*}{*)},#1}}
+%     {}
 
 \title{Paper}
 \author{Simon van Hus\\6147879\\s.vanhus@students.uu.nl}
@@ -49,7 +51,7 @@
         Abstract.
     \end{abstract}
 
-    \input{sections/tracing}
+    \input{sections/tracing3}
 
     \clearpage
     \appendix
