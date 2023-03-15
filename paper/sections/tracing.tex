@@ -1,110 +1,148 @@
 \section{Tracing}
-    Tracing is a technique that is used a lot but often not particularly well-defined.
-    The main idea and intuition behind tracing is that we take in a program and an input to said program, and output a list of operations the program used to produce the result it did.
-    This list of operations can be seen as a program itself, sometimes referred to as a ``single-line program''\cn, to produce the result of the original program.
-    The single-line referred to here, is a lack of branching paths in the program, thus eliminating all control-flow.
-    This clearly highlights the first criteria for a tracing program: it must eliminate all branching.
+    In the broadest terms, when we trace a program, we track the most basic steps the program takes provided some input.
+    This is relevant for many applications in Computer Science.
+    Certain automatic differentiation (AD) implement the forward-pass as effectively tracing, and then perform the reverse pass on the trace\cn.
+    Tracing is also used to speed up program execution by making assumptions on the program's execution path from the trace\cn.
+    \cc{Another example? Rule of threes!}
+
+    However, despite its ambivalence, tracing is rarely properly defined, or defined only for a specific use case.
+    So, in this section we will set out to create a more general definition of tracing.
     
-    Furthermore, as we aim to find only the main through line a program took for a set of inputs, we can also aim for eliminating any superflous structure in that program.
-    This mainly means that we can eliminate functions, because we are just interested in what happens in the body of those functions.
-    This then forms the basis for our second criterium: a tracing program must eliminate any superflous structure that we are not interested in.
-    However, this criterium is still a little vague.
-    For instance, we can imagine maybe tracing away things like tuples, arrays, or other collections of values.
-    After all, we might only operate on the values, not on their collections.
-    Where we draw the line on what structures we deem superflous will therefor impact the shape of our trace.
-    However, we do know that destructuring collections into single values could result in an explosion to the size of our trace, depending on the size of the collection.
-    Thus, it we might find it acceptable to leave these collections in.
-    While we will not go into data collections in this section any further, it is important that the notion of ``superflous'' program structure, might change to meet our needs.
+    To start, it will help us along to set clear expectations for what we expect a tracing function to do.
+    In the simplest terms, we expect a tracing program to take an input program with a set of inputs, and output a ``trace''.
+    This output trace is generally defined as a set of operations the input program performed on the inputs.
+    A term often used for an output trace is a ``single-line program''\cn: a program without control flow.
+    Clearing control flow like if-then-else statements is only natural: after all, provided some input the program will only walk down one variation of this branching path.
 
-    For now, our final criterium is about what the trace actually does.
-    We have talked about eliminating control-flow, and eliminating functions, but what do we actually expect to keep intact?
-    To actually achieve the single-line program we discussed, we must maintain any operations we actually perform on the inputs or other data that are relevant to our output.
-    This comes down to preserving all mathematical and Boolean operations.\\
-    In summary we set the following criteria for a tracing program:
-    \begin{enumerate}
-        \item All branching/control-flow is eliminated.
-        \item All superflous structure (like functions) is eliminated.
-        \item We record all basic mathematical and Boolean operations.
-    \end{enumerate}
+    Furthermore, it is also generally accepted that the trace consists of a subset of the syntax of the input program.
+    Because we're generally more interested in what happens to the data in our program, we can ``trace away'' functions and data structures.
+    More precisely, if our input program has the types as defined in Equation \ref{eq:typebase}, where we have sum-types as $\tau+\sigma$, product types as $\tau\times\sigma$, functions as $\tau\to\sigma$, literal real numbers, and literal Booleans.
 
-    To actually implement the trace we can view tracing as a source code transformation from a regular program (and input) written in a source language to a traced program in a target language.
-    We define the source language in Listing \ref{lst:source}.
-    Here we have basic lambda calculus with added control flow in if-then-else statements, and room for variable references.
-    We denote any term ${s\in S}$ with as ${s:D}$ if we require the term to evaluate to the domain $D$.
-    It should also be noted that we have collected all our basic operations as ${op(s_1,\dotsb,s_n)}$ for any operation of the form: ${R_n\to R}$ ($+$, $-$, etc.), $R{_n\to\{\top,\bot\}}$ ($=$, $>$, etc.), and ${\{\top,\bot\}_n\to\{\top,\bot\}}$ ($=$ or $\neq$ on Booleans).
+    \begin{equation}
+        \label{eq:typebase}
+        \tau,\sigma\coloneqq\tau+\sigma\|\tau\times\sigma\|\tau\to\sigma\|\mathbb{R}\|\mathbb{B}
+    \end{equation}
+
+    By choosing a subset of the types in our program, we can indicate which data structures should be traced away.
+    A common option is to keep only ``grounded types'', where we defined a grounded type as a type that isn't constructed of other types.
+    Looking at our example in Equation \ref{eq:typebase}, a trace keeping only these grounded types would keep only the real numbers and the Booleans as they are not built of other types.
+    % It should also be noted that these ``grounded types'' are impossible to trace away, so we don't have much of a choice on those.
+    Another common option is to keep only continuous types, tracing away all ungrounded and discrete types.
+    Do that on our type set in Equation \ref{eq:typebase} would leave us with only the real numbers.
+    This is under the assumption that the discrete types aren't actually used as data we're interested in tracing of course, but since tracing will remove all control flow from the program, keeping Booleans and operations on Booleans intact may be meaningless. 
+
+    The main take-away here is that there is some freedom of choice in what to trace away.
+    What parts we keep and what parts we trace away is very dependent on what information we want to keep in our trace.
+    Which in turn is dependent on what our exact goal is for the tracing in the first place.
     
-    \begin{deflisting}[caption=Source Language,label=lst:source,gobble=8]
-        (*\textbf{Values:}*)
-            $V\df\mathbb{R}\cup\{\top,\bot\}$
-        
-        (*\textbf{Terms:}*)
-            $S\df\{$
-                $s_1\ s_2$, (*\textit{(Application)}*)
-                $v\in V$, (*\textit{(Bare real numbers or Boolean values)}*)
-                $\lambda(x:V).s$,
-                let $s_1:V$ in $s_2$,
-                if $s_?:\{\top,\bot\}$ then $s_\top$ else $s_\bot$,
-                $op(s_1:V,\dotsb,s_n:V)$,
-                $x:\text{String}$ (*\textit{(Variable reference)}*)
-            $\}$
-    \end{deflisting}
+    We can also choose to keep some of our ungrounded types, but then we run into a problem.
+    Say we keep only functions ($\tau\to\sigma$) and real numbers, but our input program contains a function with type $\tau\to(\sigma_1+\sigma_2)$.
+    This typing is valid in our input program, but no longer valid in our trace, so we find ourselves in a bind.
+    It will be impossible to trace away the sum-type in the output of the function without tracing away the function itself.
+    \cc{Why exactly?}
+    Of course we could define a subset $\tau',\sigma'\coloneqq\mathbb{R}$ and then redefine (or add a definition for) our function so that it becomes $\sigma'\to\tau'$ making it safe to trace.
+    This then underlines the rule at work here: we can only keep types that do cannot be constructed of types that are traced away.
+    This is why the grounded types are a natural set of types to keep, as they are never constructed from other types.
 
-    We continue by defining the target language in Listing \ref{lst:target}.
-    We see here that we've lost most of our terms in accordance to our three criteria: getting rid of functions means we can get rid of lambda's, and getting rid of branching means getting rid of if-then-else statements.
-    Also, let-bindings will be easily resolved in the next steps.
-    We should also note that the values of $W$ are just the values of $V$, but now with an additional string that serves as an identifier to the value.
-    This is so that when we have our values in our trace, we can keep track where they came from.
-    We'll we assume that $V\Leftrightarrow W$, such that we can lift values in $V$ to $W$ and vice-versa.
-    In reality this just means that a value that is created in the computation (and thus has no name), will get a generated name to keep track of it.
+    It seems that our tracing definition comes down to a function that takes in a program and an input to that program, and outputs the steps taken by the program run on the input.
+    Where the input program takes uses some set of types, of which only a subset is kept in the trace, where the types in this subset may not be constructed using types from outside of the subset.
 
-    \begin{deflisting}[caption=Target Language,label=lst:target,gobble=8]
-        (*\textbf{Values:}*)
-            $W\df\{(\text{String},\mathbb{R}),(\text{String},\{\top,\bot\})\}$
+    What now remains is a concrete definition of the output of the tracing program.
+    We have already stated that it should somehow contain the steps done in by the input program.
+    The steps we wish to record are generally basic operations like arithmetic operations.
+    But other operations, such as operations on arrays, can also be added depending on the ultimate goal of the tracing.
+    More importantly, as we expect our trace to be akin to a single-line program, we may consider our trace as a series of let-bindings, akin to A-normal form\cn.
+    
+    Finally, we can quickly check if our trace is correct by executing the trace and checking whether the result is the same as in the input program.
+    We can also check the correctness of our tracing program by running it with a trace as its input program.
+    Tracing a trace should return the trace itself, because if it returned some more minimal trace, we know that the first trace wasn't properly finished.
 
-        (*\textbf{Terms:}*)
-            $T\df\{$
-                $w\in W$,
-                $op(t_1:W,\dotsb,t_n:W)$,
-                $x:\text{String}$
-            $\}$
-    \end{deflisting}
+    \subsection{Tracing steps}
+        We will now define some of the basic tracing steps for some arbitrary language as logical transformation rules.
+        To do this we first define a very basic language on which we will operate.
+        We will start by only defining the most basic types for our variables: $\tau,\sigma\coloneqq\mathbb{R}\|\sigma\to\tau$.
+        This allows us to define a simple lambda calculus on real numbers:
+        % \[
+        %     \Gamma\vdash c:\tau\quad\text{(Constant)}
+        % \]
 
-    So, all that remains is to transform our source language into our target language through tracing.
-    We can do this by looking at each of our source terms and transforming them into target terms.
-    To do this, we define need to define an environment ${\Gamma:\text{String}\to W^*}$, here ${W^*}$ is defined as ${W^*\df W\cup\{W\to W\}}$.
-    ${W^*}$ requires functions ${W\to W}$ to resolve lambda functions, as we will see.
-    We will also define the function ${\text{eval}:\Gamma\to S\to V}$ as our evaluation function, and ${\text{trace}:\Gamma\to S\to (W,[(\text{String},T)])}$ as our tracing function, where the tracing function returns both the value of the expression provided, and the trace of that expression as a list of tuples of named steps.
-    This then finally allows us to create the program transformation in Listing \ref{lst:trans}.
+        \begin{prooftree}
+            \AxiomC{}
+            \RightLabel{(Constant)}
+            \UnaryInfC{$\Gamma\vdash c:\tau$}
+        \end{prooftree}
 
-    In Listing \ref{lst:trans}, we see the program transformation from the regular program in the source language to the traced program in the tracing language.
-    We represent the return value of the trace function as a tuple consisting of a value and a unsorted list of operations performed.
-    It should be noted that this unsorted list has all its values as tuples consisting of an identifier and the actual trace step.
-    This is why this list can stay unsorted, as all values that are referred to by certain steps are named as such in this list.
-    This might also help us implementing parallelism on this trace later on.
+        \begin{prooftree}
+            \AxiomC{$(x:\tau)\in\Gamma$}
+            \RightLabel{(Variable)}
+            \UnaryInfC{$\Gamma\vdash x:\tau$}
+        \end{prooftree}
 
-    \begin{deflisting}[caption=Tracing transformation,label=lst:trans,gobble=8]
-        $\text{trace}(\Gamma,s_1\ s_2)\Rightarrow(w_a, t_1\cup t_2\cup t_a)$
-            $(w_1,t_1)\Leftarrow\text{trace}(\Gamma,s_1)$
-            $(w_2,t_2)\Leftarrow\text{trace}(\Gamma,s_2)$
-            $(w_a,t_a)\Leftarrow w_a(w_2)$
+        \begin{prooftree}
+            \AxiomC{$\Gamma\cup\{x:\tau\}\vdash e:\sigma$}
+            \RightLabel{(Abstraction)}
+            \UnaryInfC{$\Gamma\vdash(\lambda(x:\tau).e):\tau\to\sigma$}
+        \end{prooftree}
 
-        $\text{trace}(\Gamma, v\in V)\Rightarrow(v,\emptyset)$
+        \begin{prooftree}
+            \AxiomC{$\Gamma\vdash e_1:\tau\to\sigma$}
+            \AxiomC{$\Gamma\vdash e_2:\tau$}
+            \RightLabel{(Application)}
+            \BinaryInfC{$\Gamma\vdash(e_1\ e_2):\sigma$}
+        \end{prooftree}
 
-        $\text{trace}(\Gamma, \lambda(x).s)\Rightarrow(\lambda(x).\text{trace}(\lambda\cup\{x\}, s),\emptyset)$
+        Tracing through this lambda calculus is then fairly straightforward.
+        We will define $\tau_T$ and $\sigma_T$ as type indicators for the types of the trace, such that $\tau_T,\sigma_T\subseteq\tau,\sigma$.
+        % Also, we will define $\Gamma_T$ as the tracing language.
 
-        $\text{trace}(\Gamma, \texttt{let}\ s_1\ \texttt{in}\ s_2)\Rightarrow(w_2,t_1\cup t_2)$
-            $(w_1,t_1)\Leftarrow\text{trace}(\Gamma,s_1)$
-            $(w_2,t_2)\Leftarrow\text{trace}(\Gamma\cup w_1,s_2)$
+        \begin{prooftree}
+            \AxiomC{$\Gamma\vdash e:\tau$}
+            \RightLabel{(Tracing Introduction)}
+            \UnaryInfC{$\Gamma\vdash\text{trace}(e):\tau_T$}
+        \end{prooftree}
 
-        $\text{trace}(\Gamma, \texttt{if}\ s_?\ \texttt{then}\ s_\top\ \texttt{else}\ s_\bot)\Rightarrow(w_a,t_?\cup t_a)$
-            $(w_?,t_?)\Leftarrow\text{trace}(\Gamma,s_?)$
-            $(w_a,t_a)\Leftarrow\texttt{if}\ w_?\ \texttt{then}\ \text{trace}(s_\top)\ \texttt{else}\ \text{trace}(s_\bot)$
-        
-        $\text{trace}(\Gamma, op(s_1,\dotsb,s_n))\Rightarrow(w_{op},\{op(w_1,\dotsb,w_n)\}\cup(t_1\cup\dotsb\cup t_n))$
-            $(w_1,t_1)\Leftarrow\text{trace}(\Gamma, s_1)$
-                $\vdots$
-            $(w_n,t_n)\Leftarrow\text{trace}(\Gamma, s_n)$
-            $w_{op}\Leftarrow\text{eval}(op(w_1,\dotsb,w_n))$
+        \begin{prooftree}
+            \AxiomC{$\Gamma\vdash\text{trace}(c:\tau_T)$}
+            \RightLabel{(Constant tracing)}
+            \UnaryInfC{$\Gamma\vdash c:\tau_T$}
+        \end{prooftree}
 
-        $\text{trace}(\Gamma, x)\Rightarrow(x\in\Gamma,\emptyset)$
-    \end{deflisting}
+        \begin{prooftree}
+            \AxiomC{$(x:\tau_T)\in\Gamma$}
+            \AxiomC{$\text{trace}(x)$}
+            \RightLabel{(Variable tracing)}
+            \BinaryInfC{$\Gamma\vdash x:\tau_T$}
+        \end{prooftree}
+
+        \begin{prooftree}
+            \AxiomC{$\Gamma\vdash\text{trace}(\lambda(x:\tau).e:\tau\to\sigma)$}
+            \RightLabel{(Abstraction tracing)}
+            \UnaryInfC{$\Gamma\vdash\lambda(x:\tau_T).\text{trace}(e):\tau_T\to\sigma_T$}
+        \end{prooftree}
+
+        \begin{prooftree}
+            \AxiomC{$\Gamma\vdash e_1:\tau\to\sigma$}
+            \AxiomC{$\Gamma\vdash e_2:\tau$}
+            \AxiomC{$\Gamma\vdash\text{trace}(e_1\ e_2)$}
+            \RightLabel{(Application tracing)}
+            \TrinaryInfC{$\Gamma\vdash((\text{trace}(e_1):\tau_T\to\sigma_T)\ (\text{trace}(e_2):\tau_T)):\sigma_T$}
+        \end{prooftree}
+
+        We can then extend this with the basic operations we wish to preserve through our trace.
+        We will denote these operations as $op(e_1,\dots,e_n)$ with $n$ arguments, for all functions $op:(\mathbb{R}\cup\mathbb{B})_n\to\mathbb{R}\cup\mathbb{B}$.
+        \cc{This type signature needs fixin'.}
+        As long as we want to preserve these operations in our trace they are generally homomorphic.
+
+        \begin{prooftree}
+            \AxiomC{$\Gamma\vdash e_1:\tau',\dots,e_n:\tau'$}
+            \AxiomC{$\tau'\in\{\mathbb{B},\mathbb{R}\}$}
+            \AxiomC{$\sigma'\in\{\mathbb{B},\mathbb{R}\}$}
+            \RightLabel{(Basic operations)}
+            \TrinaryInfC{$\Gamma\vdash op(e_1,\dots,e_n):\sigma'$}
+        \end{prooftree}
+
+        \begin{prooftree}
+            \AxiomC{$\Gamma_T\vdash\text{trace}(op(e_1,\dots,e_n))$}
+            \RightLabel{(Trace on basic operations)}
+            \UnaryInfC{$\Gamma_T\vdash op(\text{trace}(e_1),\dots,\text{trace}(e_n))$}
+        \end{prooftree}
