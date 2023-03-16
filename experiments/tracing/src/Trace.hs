@@ -79,7 +79,7 @@ module Trace (trace) where
             _          -> error "Type mismatch in trace'/ELift"
     trace' _ c (EOp0 (Iota i)) =
         let s = 'r' :  show c
-        in  (TArray s [0 .. fromIntegral i], Map.singleton s $ TOp0 (Iota i), c + 1)
+        in  (TArray s [0 .. (fromIntegral i - 1)], Map.singleton s $ TOp0 (Iota i), c + 1)
     trace' n c (EOp1 op e1)    =
         let (v1, t1, c1) = trace' n c e1
             s = 'r' : show c1
@@ -101,7 +101,11 @@ module Trace (trace) where
             (Gte, TFloat s1 a, TFloat s2 b) -> (TBool s $ a >= b, Map.insert s (TOp2 Gte s1 s2) t2, c2 + 1)
             (Lt,  TFloat s1 a, TFloat s2 b) -> (TBool s $ a < b, Map.insert s (TOp2 Lt s1 s2) t2, c2 + 1)
             (Lte, TFloat s1 a, TFloat s2 b) -> (TBool s $ a <= b, Map.insert s (TOp2 Lte s1 s2) t2, c2 + 1)
-            (Map, TFunc f,    TArray _ b) -> let (vm, tm, cm) = traceMap n c f (TArray s b) in (vm, Map.union tm t2, cm) -- TODO: Need TOp2 here somewhere
+            (Map, TFunc f,     TArray s2 b) ->
+                let (vm, tm, cm) = traceMap n (c + 1) 0 f (TArray s2 b) 
+                in  case vm of
+                    (TArray _ vmv) -> (TArray s vmv, Map.insert s (TOp2 Map "lambda" s2) (Map.union tm t2), cm)
+                    _              -> error "Type mismatch in trace'/EOp2/Map"
             (Mul, TFloat s1 a, TFloat s2 b) -> (TFloat s $ a * b, Map.insert s (TOp2 Mul s1 s2) t2, c2 + 1)
             (Neq, TBool s1 a,  TBool s2 b)  -> (TBool s $ a /= b, Map.insert s (TOp2 Neq s1 s2) t2, c2 + 1)
             (Neq, TFloat s1 a, TFloat s2 b) -> (TBool s $ a /= b, Map.insert s (TOp2 Neq s1 s2) t2, c2 + 1)
@@ -109,14 +113,12 @@ module Trace (trace) where
             (_,   _,          _)          -> error "Type mismatch in trace'/EOp2"
     trace' n c (ERef s1) = (n Map.! s1, Map.empty, c)
 
-    traceMap :: TEnvironment -> Int -> (TValue -> Int -> (TValue, Trace, Int)) -> TValue -> (TValue, Trace, Int)
-    traceMap _ c _ (TArray _ [])     = (TArray ('r' : show c) [], Map.empty, c + 1)
-    traceMap n c f (TArray s (x:xs)) =
-        let (vx, tx, cx) = f (TFloat (s ++ "!?") x) c -- TODO: Give this proper naming
-            (vs, ts, cs) = traceMap n cx f (TArray s xs)
+    traceMap :: TEnvironment -> Int -> Int -> (TValue -> Int -> (TValue, Trace, Int)) -> TValue -> (TValue, Trace, Int)
+    traceMap _ c _ _ (TArray s [])     = (TArray s [], Map.empty, c)
+    traceMap n c i f (TArray s (x:xs)) =
+        let (vx, tx, cx) = f (TFloat (s ++ '!' : show i) x) c
+            (vs, ts, cs) = traceMap n cx (i + 1) f (TArray s xs)
         in  case (vx, vs) of
             (TFloat _ v, TArray s' xsv) -> (TArray s' (v : xsv), Map.union tx ts, cs)
             _                           -> error "Type mismatch in traceMap (1)"
-    traceMap _ _ _ _                 = error "Type mismatch in traceMap (2)"
-
-    -- TODO: Test array tracing (map, sum, iota, indexing)
+    traceMap _ _ _ _ _                 = error "Type mismatch in traceMap (2)"

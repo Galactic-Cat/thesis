@@ -64,7 +64,7 @@ module Expression (
     eval n (ELambda s1 e1)    = EFunc $ \x -> eval (Map.insert s1 x n) e1
     eval n (ELet    s1 e1 e2) = eval (Map.insert s1 (eval n e1) n) e2
     eval _ (ELift   v1)       = v1
-    eval _ (EOp0    (Iota a)) = EArray [0.0 .. fromIntegral a]
+    eval _ (EOp0    (Iota a)) = EArray [0.0 .. (fromIntegral a - 1)]
     eval n (EOp1    op e1)    =
         let v1 = eval n e1
         in  case (op, v1) of
