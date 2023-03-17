@@ -93,7 +93,8 @@
 
         Tracing through this lambda calculus is then fairly straightforward.
         We will define $\tau_T$ and $\sigma_T$ as type indicators for the types of the trace, such that $\tau_T,\sigma_T\subseteq\tau,\sigma$.
-        % Also, we will define $\Gamma_T$ as the tracing language.
+        In reality this might mean we do not add our ungrounded types like $\tau\to\sigma$ to our traced types $\tau_T$ and $\sigma_T$.
+        However, as stated before, as long as the types in $\tau_T,\sigma_T$ do not contain types that are not in $\tau_T$ and $\sigma_T$, they may contain ungrounded types as well.
 
         \begin{prooftree}
             \AxiomC{$\Gamma\vdash e:\tau$}
@@ -109,7 +110,7 @@
 
         \begin{prooftree}
             \AxiomC{$(x:\tau_T)\in\Gamma$}
-            \AxiomC{$\text{trace}(x)$}
+            \AxiomC{$\Gamma\vdash\text{trace}(x)$}
             \RightLabel{(Variable tracing)}
             \BinaryInfC{$\Gamma\vdash x:\tau_T$}
         \end{prooftree}
@@ -128,10 +129,14 @@
             \TrinaryInfC{$\Gamma\vdash((\text{trace}(e_1):\tau_T\to\sigma_T)\ (\text{trace}(e_2):\tau_T)):\sigma_T$}
         \end{prooftree}
 
+        It should be noted that tracing abstraction and application means tracing away the function type $\tau\to\sigma$.
+        If we want to keep the function type in our final trace, we cannot trace away abstraction, and the application process would end with the trace of $e_2$, rather than the trace of $e_1\ e_2$.
+
         We can then extend this with the basic operations we wish to preserve through our trace.
-        We will denote these operations as $op(e_1,\dots,e_n)$ with $n$ arguments, for all functions $op:(\mathbb{R}\cup\mathbb{B})_n\to\mathbb{R}\cup\mathbb{B}$.
-        \cc{This type signature needs fixin'.}
-        As long as we want to preserve these operations in our trace they are generally homomorphic.
+        We will denote these operations as $op(e_1,\dots,e_n)$ with $n$ arguments, for all functions $op:\tau'\to\sigma'$ where $\tau'\in\{\mathbb{B},\mathbb{R}\}$ and $\sigma'\in\{\mathbb{B},\mathbb{R}\}$.
+        Of course, to ever make use of operations that either take in or produce Boolean values, we would need to extend our variable types with the Boolean domain $\mathbb{B}$.
+        This means our new variable types become $\tau,\sigma\coloneqq\mathbb{B}\|\mathbb{R}\|\tau\to\sigma$.
+        As long as we want to preserve these operations $op$ in our trace they are generally homomorphic:
 
         \begin{prooftree}
             \AxiomC{$\Gamma\vdash e_1:\tau',\dots,e_n:\tau'$}
@@ -142,7 +147,59 @@
         \end{prooftree}
 
         \begin{prooftree}
-            \AxiomC{$\Gamma_T\vdash\text{trace}(op(e_1,\dots,e_n))$}
+            \AxiomC{$\Gamma\vdash\text{trace}(op(e_1:\tau_1,\dots,e_n:\tau_n):\sigma):\sigma_T$}
             \RightLabel{(Trace on basic operations)}
-            \UnaryInfC{$\Gamma_T\vdash op(\text{trace}(e_1),\dots,\text{trace}(e_n))$}
+            \UnaryInfC{$\Gamma\vdash op(\text{trace}(e_1):\tau_T,\dots,\text{trace}(e_n):\tau_T):\sigma_T$}
         \end{prooftree}
+
+        We can also introduce control flow in the form of if-then-else statements.
+        These will be eliminated by the tracing process, because when we are tracing, we've been provided with the inputs and can thus resolve the conditional and only follow the relevant branch.
+        
+        \begin{prooftree}
+            \AxiomC{$\Gamma\vdash t_c:\mathbb{B}$}
+            \AxiomC{$\Gamma\vdash t_\top:\tau$}
+            \AxiomC{$\Gamma\vdash t_\bot:\sigma$}
+            \RightLabel{(if-then-else introduction)}
+            \TrinaryInfC{$\Gamma\vdash\texttt{if }t_c:\mathbb{B}\texttt{ then }t_\top:\tau\texttt{ else }t_\bot:\sigma$}
+        \end{prooftree}
+
+        \begin{prooftree}
+            \AxiomC{$\Gamma\vdash\text{trace}(\texttt{if }t_c:\mathbb{B}\texttt{ then }t_\top:\tau\texttt{ else }t_\bot:\sigma)$}
+            \AxiomC{$t_c=\top$}
+            \RightLabel{(if-then-else tracing, true)}
+            \BinaryInfC{$\Gamma\vdash\text{trace}(t_\top:\tau):\tau_T$}
+        \end{prooftree}
+
+        \begin{prooftree}
+            \AxiomC{$\Gamma\vdash\text{trace}(\texttt{if }t_c:\mathbb{B}\texttt{ then }t_\top:\tau\texttt{ else }t_\bot:\sigma)$}
+            \AxiomC{$t_c=\bot$}
+            \RightLabel{(if-then-else tracing, false)}
+            \BinaryInfC{$\Gamma\vdash\text{trace}(t_\bot:\sigma):\sigma_T$}
+        \end{prooftree}
+
+        Finally, we will also introduce let-bindings as a program structure.
+        While let-bindings can be rewritten als lambda expressions, and then traced that way, it is actually a little simpler to trace let-bindings directly, as they are executed immediately anyways.
+        This results in us technically tracing away the let bindings, but as the output of the tracing function can be interpreted as a list of let-bindings this remains only a technicality.
+        \cc{This is probably too vague.}
+
+        \begin{prooftree}
+            \AxiomC{$\Gamma\vdash e_1:\tau$}
+            \AxiomC{$\Gamma\cup\{e_1:\tau\}\vdash e_2:\sigma$}
+            \RightLabel{(let-binding introduction)}
+            \BinaryInfC{$\Gamma\vdash(\texttt{let }e_1:\tau\texttt{ in }e_2:\sigma):\sigma$}
+        \end{prooftree}
+
+        \begin{prooftree}
+            \AxiomC{$\Gamma\vdash(\texttt{let }e_1:\tau\texttt{ in }e_2:\sigma):\sigma$}
+            \RightLabel{(let-binding elimination)}
+            \UnaryInfC{$\Gamma\cup\{e_1:\tau\}\vdash e_2:\sigma$}
+        \end{prooftree}
+        
+        \begin{prooftree}
+            \AxiomC{$\Gamma\vdash\text{trace}((\texttt{let }e_1:\tau\texttt{ in }e_2:\sigma):\sigma):\sigma_T$}
+            \RightLabel{(tracing let-binding)}
+            \UnaryInfC{$\Gamma\cup\{\text{trace}(e_1:\tau):\tau_T\}\vdash\text{trace}(e_2:\sigma):\sigma_T$}
+        \end{prooftree}
+
+    \subsection{Array Tracing}
+    
