@@ -26,7 +26,6 @@
     By choosing a subset of the types in our program, we can indicate which data structures should be traced away.
     A common option is to keep only ``grounded types'', where we defined a grounded type as a type that isn't constructed of other types.
     Looking at our example in Equation \ref{eq:typebase}, a trace keeping only these grounded types would keep only the real numbers and the Booleans as they are not built of other types.
-    % It should also be noted that these ``grounded types'' are impossible to trace away, so we don't have much of a choice on those.
     Another common option is to keep only continuous types, tracing away all ungrounded and discrete types.
     Do that on our type set in Equation \ref{eq:typebase} would leave us with only the real numbers.
     This is under the assumption that the discrete types aren't actually used as data we're interested in tracing of course, but since tracing will remove all control flow from the program, keeping Booleans and operations on Booleans intact may be meaningless. 
@@ -57,14 +56,11 @@
     We can also check the correctness of our tracing program by running it with a trace as its input program.
     Tracing a trace should return the trace itself, because if it returned some more minimal trace, we know that the first trace wasn't properly finished.
 
-    \subsection{Tracing steps}
+    \subsection{Tracing steps} \label{sec:lambda}
         We will now define some of the basic tracing steps for some arbitrary language as logical transformation rules.
         To do this we first define a very basic language on which we will operate.
         We will start by only defining the most basic types for our variables: $\tau,\sigma\coloneqq\mathbb{R}\|\sigma\to\tau$.
         This allows us to define a simple lambda calculus on real numbers:
-        % \[
-        %     \Gamma\vdash c:\tau\quad\text{(Constant)}
-        % \]
 
         \begin{prooftree}
             \AxiomC{}
@@ -202,4 +198,44 @@
         \end{prooftree}
 
     \subsection{Array Tracing}
-    
+        Of course, the glaring omission from the lambda calculus described in Section \ref{sec:lambda} is data structures as present in modern programming languages.
+        As an example, in this section, we will discuss tracing data in an array.
+        We will also limit our array discussion to arrays of real numbers for now.
+
+        If we want to trace an array, there is an obvious naïve approach.
+        Rather than tracing the array as a single data object, we instead trace every entry in our array as a loose variable.
+        We can easily extend the example in Section \ref{sec:lambda} for lambda calculus:
+
+        \[
+            \tau,\sigma\coloneqq\mathbb{R}\|\{\top,\bot\}\|\sigma\to\tau\|[\mathbb{R}]
+        \]
+
+        \begin{prooftree}
+            \AxiomC{$v_1:\mathbb{R},\dots,v_n:\mathbb{R}$}
+            \RightLabel{(Array Introduction)}
+            \UnaryInfC{$\Gamma\vdash[v_1,\dots,v_n]:[\mathbb{R}]$}
+        \end{prooftree}
+
+        \begin{prooftree}
+            \AxiomC{$\Gamma\vdash\text{trace}([v_1,\dots,v_n]:[\mathbb{R}]):[\tau_T]$}
+            \RightLabel{(Array Tracing)}
+            \UnaryInfC{$\Gamma\vdash[\text{trace}(v_1),\dots,\text{trace}(v_n)]:[\tau_T]$}
+        \end{prooftree}
+
+        The major disadvantage here is that we effectively deconstruct the array to trace it.
+        Oftentimes, operations on arrays are applied to all or predefined subset of the items in the array.
+        For instance if we want to square all the numbers in an array, we wouldn't need to see every item in the array being squared in the array.
+        This is just extra information that probably makes our trace less useable.
+        Instead, we might envision an entry in our trace where this we see the whole array being ``squared'', as this would convey almost the same information as having an entry for every item in the array.
+        
+        Unfortunately, this isn't always possible.
+        Imagine an array with the numbers one through ten, and a function that only squares an item in the array if it is a three.
+        We immediately find that there is no way to have the trace of this function mapped on our array as a single entry in the trace.
+        After all, the function does something different for threes than for other numbers.
+        So in this case we might need to use our naïve approach from before.
+
+        This also highlights something about tracing functions mapped over arrays.
+        If that function contains some branching (like an if-then-else statement checking for threes), we have to trace the application of the function to every item in the array individually.
+        However, if the mapped function is the same for all items in the array (it does not branch), we would actually be able to trace it as if applying the function to the array rather than its items.
+
+        \cc{There's probably more to say about array tracing.}
