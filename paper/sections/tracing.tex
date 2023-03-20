@@ -88,16 +88,19 @@
         \end{lstlisting}
 
         Tracing through this lambda calculus is pretty straightforward.
-        We will define our trace as a set $T$, as discussed earlier, and a function $\text{trace}(\Gamma, s)\to T$, that traces some term $s$ with some environment $\Gamma$.
-        For now, to keep implementation details to a minimum, we will also not bother too much with the how to generate the names for the steps in our trace.
-        Instead, we will denote a newly generated name as $*$, and a (generated) name for a specific trace part as $s^*$ for some term $s$.
-        Now we can define tracing in Listing \ref{lst:tracing}.
+        We will define our trace as some set $T$, such that our tracing function $\text{trace}(\Gamma,e)\to(v,T)$ gives us a value $v$ and a trace $T$ for some environment $\Gamma$ and some expression $e$.
+        To not go into too much implementational overhead, we will ignore naming the items in the trace for now.
+        Listing \ref{lst:tracing} shows how tracing the lambda calculus in Listing \ref{lst:language} would look like, if we choose to trace away the function type (leaving us only with real numbers).
+        We see that tracing a literal real number $r$, just adds $r$ to the trace, after all real numbers aren't traced away.
+        Tracing application is also fairly straightforward: we trace the argument $t$, and then the function $s$ with $t$.
+        Only our $\lambda$-abstraction is a little more complex.
+        Since nothing actually happens our trace here is empty, however this does not mean that we can ignore the steps the abstracted expression takes, those we might still be interested in.
+        So we can rewrite the lambda expression, to move the trace over, and trace only the body when it is actually applied.
 
         \begin{lstlisting}[caption=First tracing rules, captionpos=b, float=tbhp, label=lst:tracing, mathescape, escapeinside={!*}{*!}, gobble=12]
-            $\text{trace}(\Gamma,b\in\mathbb{B})\Rightarrow\{(b^*,b)\}$
-            $\text{trace}(\Gamma,n\in\mathbb{R})\Rightarrow\{(r^*,r)\}$
-            $\text{trace}(\Gamma,\lambda(x:\tau).s)\Rightarrow\emptyset$
-            $\text{trace}(\Gamma,s\ t)\Rightarrow\text{trace}(\Gamma,t)\cup\text{trace}(\Gamma\cup\{t\},s)$
+            $\text{trace}(\Gamma,n\in\mathbb{R})\Rightarrow(r, \{r\})$
+            $\text{trace}(\Gamma,\lambda(x:\tau).s)\Rightarrow(\lambda(x:\tau).trace(\Gamma\cup x, s),\emptyset)$
+            $\text{trace}(\Gamma,s\ t)\Rightarrow(s\ t,\text{trace}(\Gamma,t)\cup\text{trace}(\Gamma\cup\{t\},s))$
         \end{lstlisting}
 
     \subsection{Tracing steps} \label{sec:lambda}
@@ -219,7 +222,7 @@
         \end{prooftree}
 
         Finally, we will also introduce let-bindings as a program structure.
-        While let-bindings can be rewritten als lambda expressions, and then traced that way, it is actually a little simpler to trace let-bindings directly, as they are executed immediately anyways.
+        While let-bindings can be rewritten as lambda expressions, and then traced that way, it is actually a little simpler to trace let-bindings directly, as they are executed immediately anyways.
         This results in us technically tracing away the let bindings, but as the output of the tracing function can be interpreted as a list of let-bindings this remains only a technicality.
         \cc{This is probably too vague.}
 
