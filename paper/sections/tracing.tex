@@ -63,6 +63,36 @@
     Tracing a trace should return the trace itself, because if it returned some more minimal trace, we know that the first trace wasn't properly finished.
     \cc{This probably needs a more precise description.}
 
+    \subsection{Tracing Steps}
+        \cc{This subsection might replace Section \ref{sec:lambda}.}\\
+        We will now define some basic tracing steps for some arbitrary language.
+        To do this we first define a language on which we will operate.
+        We do this in Listing \ref{lst:language}, where we define a basic lambda calculus.
+
+        \begin{lstlisting}[caption=Basic language, captionpos=b, float=tbhp, label=lst:language, mathescape, escapeinside={!*}{*!}, gobble=12]
+            !*\textbf{Types:}*!
+                $\sigma,\tau\coloneqq\mathbb{R}\|\sigma\to\tau$
+
+            !*\textbf{Terms:}*!
+                $s,t\coloneqq$
+                    $r\in\mathbb{R}\quad$!*\text{(literal real numbers)}*!
+                  | $\lambda(x:\tau).s\quad$!*\text{(abstraction)}*!
+                  | $s\ t\quad$!*\text{(application)}*!
+        \end{lstlisting}
+
+        Tracing through this lambda calculus is pretty straightforward.
+        We will define our trace as a set $T$, as discussed earlier, and a function $\text{trace}(\Gamma, s)\to T$, that traces some term $s$ with some environment $\Gamma$.
+        For now, to keep implementation details to a minimum, we will also not bother too much with the how to generate the names for the steps in our trace.
+        Instead, we will denote a newly generated name as $*$, and a (generated) name for a specific trace part as $s^*$ for some term $s$.
+        Now we can define tracing in Listing \ref{lst:tracing}.
+
+        \begin{lstlisting}[caption=First tracing rules, captionpos=b, float=tbhp, label=lst:tracing, mathescape, escapeinside={!*}{*!}, gobble=12]
+            $\text{trace}(\Gamma,b\in\mathbb{B})\Rightarrow\{(b^*,b)\}$
+            $\text{trace}(\Gamma,n\in\mathbb{R})\Rightarrow\{(r^*,r)\}$
+            $\text{trace}(\Gamma,\lambda(x:\tau).s)\Rightarrow\emptyset$
+            $\text{trace}(\Gamma,s\ t)\Rightarrow\text{trace}(\Gamma,t)\cup\text{trace}(\Gamma\cup\{t\},s)$
+        \end{lstlisting}
+
     \subsection{Tracing steps} \label{sec:lambda}
         {\color{red}The main problem in this section is that the program transformations say nothing about the actual trace produced.}\\
         We will now define some of the basic tracing steps for some arbitrary language as logical transformation rules.
@@ -137,7 +167,7 @@
         If we want to keep the function type in our final trace, we cannot trace away abstraction, and the application process would end with the trace of $e_2$, rather than the trace of $e_1\ e_2$.
 
         We can then extend this with the basic operations we wish to preserve through our trace.
-        We will denote these operations as $op(e_1,\dots,e_n)$ with $n$ arguments, for all functions $op:\tau'\to\sigma'$ where $\tau'\in\{\mathbb{B},\mathbb{R}\}$ and $\sigma'\in\{\mathbb{B},\mathbb{R}\}$.
+        We will denote these operations as $op(e_1,\dots,e_n)$ with $n$ arguments, for all functions $op:\tau'^n\to\sigma'$ where $\tau'\in\{\mathbb{B},\mathbb{R}\}$ and $\sigma'\in\{\mathbb{B},\mathbb{R}\}$.
         Of course, to ever make use of operations that either take in or produce Boolean values, we would need to extend our variable types with the Boolean domain $\mathbb{B}$.
         This means our new variable types become $\tau,\sigma\coloneqq\mathbb{B}\|\mathbb{R}\|\tau\to\sigma$.
         As long as we want to preserve these operations $op$ in our trace they are generally homomorphic:
