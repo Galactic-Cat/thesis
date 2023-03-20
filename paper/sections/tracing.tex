@@ -1,7 +1,7 @@
 \section{Tracing}
     In the broadest terms, when we trace a program, we track the most basic steps the program takes provided some input.
     This is relevant for many applications in Computer Science.
-    Certain automatic differentiation (AD) implement the forward-pass as effectively tracing, and then perform the reverse pass on the trace\cn.
+    Certain automatic differentiation (AD) effectively implement the forward-pass as tracing, and then perform the reverse pass on the trace\cn.
     Tracing is also used to speed up program execution by making assumptions on the program's execution path from the trace\cn.
     \cc{Another example? Rule of threes!}
 
@@ -16,13 +16,14 @@
 
     Furthermore, it is also generally accepted that the trace consists of a subset of the syntax of the input program.
     Because we're generally more interested in what happens to the data in our program, we can ``trace away'' functions and data structures.
-    More precisely, if our input program has the types as defined in Equation \ref{eq:typebase}, where we have sum-types as $\tau+\sigma$, product types as $\tau\times\sigma$, functions as $\tau\to\sigma$, literal real numbers, and literal Booleans.
+    More precisely, say our input program has the types as defined in Equation \ref{eq:typebase}, where we have sum-types as $\tau+\sigma$, product types as $\tau\times\sigma$, functions as $\tau\to\sigma$, literal real numbers, and literal Booleans.
 
     \begin{equation}
         \label{eq:typebase}
         \tau,\sigma\coloneqq\tau+\sigma\|\tau\times\sigma\|\tau\to\sigma\|\mathbb{R}\|\mathbb{B}
     \end{equation}
 
+    We can imagine our simplified language, in which we will express our trace -- as a language with less types.
     By choosing a subset of the types in our program, we can indicate which data structures should be traced away.
     A common option is to keep only ``grounded types'', where we defined a grounded type as a type that isn't constructed of other types.
     Looking at our example in Equation \ref{eq:typebase}, a trace keeping only these grounded types would keep only the real numbers and the Booleans as they are not built of other types.
@@ -39,9 +40,15 @@
     This typing is valid in our input program, but no longer valid in our trace, so we find ourselves in a bind.
     It will be impossible to trace away the sum-type in the output of the function without tracing away the function itself.
     \cc{Why exactly?}
-    Of course we could define a subset $\tau',\sigma'\coloneqq\mathbb{R}$ and then redefine (or add a definition for) our function so that it becomes $\sigma'\to\tau'$ making it safe to trace.
+    Of course we could define a subset $\tau',\sigma'\coloneqq\mathbb{R}$ and then redefine (or add a definition for) our function so that it becomes $\tau'\to\sigma'$ making it safe to trace.
     This then underlines the rule at work here: we can only keep types that do cannot be constructed of types that are traced away.
     This is why the grounded types are a natural set of types to keep, as they are never constructed from other types.
+    In a similar vein, although slightly less clear, we also trace away any operators that perform on or produce types that we do not keep in our trace.
+    For example, when we choose to keep only real numbers, we can trace away all Boolean values and operations that take in or produce Boolean values.
+    After all, they will be meaningless in our limited trace language.
+    This ``tracing away'' often comes down to rewriting or omitting these operations in the trace.
+    For operations that influence control flow this is simple, however if we have types that we wish to trace away in some data that we use or (more importantly) combine with types that we do wish to keep, omission might mean our trace is missing steps.
+    We might be able to express these types we trace away as types we keep, if they are necessary, but this might be more work than it is worth.
 
     It seems that our tracing definition comes down to a function that takes in a program and an input to that program, and outputs the steps taken by the program run on the input.
     Where the input program takes uses some set of types, of which only a subset is kept in the trace, where the types in this subset may not be constructed using types from outside of the subset.
@@ -52,11 +59,11 @@
     But other operations, such as operations on arrays, can also be added depending on the ultimate goal of the tracing.
     More importantly, as we expect our trace to be akin to a single-line program, we may consider our trace as a series of let-bindings, akin to A-normal form\cn.
     
-    Implementation wise, we might produce our trace as a set of 2-tuples, consisting of a name and the actual operation.
-    As long as every component is properly named, every operation in the trace can actually just refer to a previous point in the trace, except for new data.
-    This way, we can get away with only storing the operation themselves, and not their inputs or results.
-    Because of this implementation method, we will assume our trace to be of the type $\{(\text{String},\text{Operation})\}$.
-    This will allow us the freedom to add to the trace as in taking the union of two sets: the current trace, and any items to add to it.
+    % Implementation wise, we might produce our trace as a set of 2-tuples, consisting of a name and the actual operation.
+    % As long as every component is properly named, every operation in the trace can actually just refer to a previous point in the trace, except for new data.
+    % This way, we can get away with only storing the operation themselves, and not their inputs or results.
+    % Because of this implementation method, we will assume our trace to be of the type $\{(\text{String},\text{Operation})\}$.
+    % This will allow us the freedom to add to the trace as in taking the union of two sets: the current trace, and any items to add to it.
     
     Finally, we can quickly check if our trace is correct by executing both the input program and the trace, and checking if their results are the same.
     We can also check the correctness of our tracing program by running it with a trace as its input program.
