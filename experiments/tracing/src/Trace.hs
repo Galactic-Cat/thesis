@@ -50,36 +50,39 @@ module Trace (trace) where
             switch k (EFloat e) = TFloat k e
             switch _ _          = error "Function in starting environment"
     
-    trace :: EEnvironment -> Expression -> (TValue, Trace)
-    trace n e = let (v, t, _) = trace' n' 0 e in (v, Map.union t t')
+    trace :: EEnvironment -> Expression -> Bool -> (TValue, Trace)
+    trace n e at = let (v, t, _) = trace' n' 0 e at in (v, Map.union t t')
         where n' = switchEnv n
               t' = Map.map TLift n'
 
-    trace' :: TEnvironment -> Int -> Expression -> (TValue, Trace, Int)
-    trace' n c (EApply e1 e2) =
+    trace' :: TEnvironment -> Int -> Expression -> Bool -> (TValue, Trace, Int)
+    trace' n c _  (EApply e1 e2) =
         let (v1, t1, c1) = trace' n c  e1
             (v2, t2, c2) = trace' n c1 e2 <:> t1
         in  case v1 of
             TFunc f -> f v2 c2 <:> t2
             _       -> error "Type mismatch in trace'/EApply"
-    trace' n c (EIf e1 e2 e3) =
+    trace' n c _  (EIf e1 e2 e3) =
         let (v1, t1, c1) = trace' n c e1
         in  case v1 of
             (TBool _ True)  -> trace' n c1 e2 <:> t1
             (TBool _ False) -> trace' n c1 e3 <:> t1
             _               -> error "Type mismatch in trace'/EIf"
-    trace' n c (ELambda s1 e1) = (TFunc $ \x c' -> trace' (Map.insert s1 x n) c' e1, Map.empty, c)
-    trace' n c (ELet s1 e1 e2) = trace' (Map.insert s1 v1 n) c1 e2 <:> t1
+    trace' n c _  (ELambda s1 e1) = (TFunc $ \x c' -> trace' (Map.insert s1 x n) c' e1, Map.empty, c)
+    trace' n c _  (ELet s1 e1 e2) = trace' (Map.insert s1 v1 n) c1 e2 <:> t1
         where (v1, t1, c1) = trace' n c e1
-    trace' _ c (ELift v1)      =
+    trace' _ c at (ELift v1)      =
         let s1 = 'r' : show c
         in  case v1 of
             (EBool v)  -> (TBool s1 v, Map.singleton s1 $ TLift (TBool s1 v), c + 1)
             (EFloat v) -> (TFloat s1 v, Map.singleton s1 $ TLift (TFloat s1 v), c + 1)
             _          -> error "Type mismatch in trace'/ELift"
-    trace' _ c (EOp0 (Iota i)) =
+    trace' _ c at (EOp0 (Iota i)) =
         let s = 'r' :  show c
-        in  (TArray s [0 .. (fromIntegral i - 1)], Map.singleton s $ TOp0 (Iota i), c + 1)
+            v = TArray s [0 .. (fromIntegral i - 1)]
+        in  if   at 
+            then (v, Map.singleton s $ TOp0 (Iota i), c + 1)
+            else (v, traceArrayLift s 0 [0 .. (fromIntegral i - 1)], c + 1)
     trace' n c (EOp1 op e1)    =
         let (v1, t1, c1) = trace' n c e1
             s = 'r' : show c1
@@ -112,6 +115,18 @@ module Trace (trace) where
             (Sub, TFloat s1 a, TFloat s2 b) -> (TFloat s $ a - b, Map.insert s (TOp2 Sub s1 s2) t2, c2 + 1)
             (_,   _,          _)          -> error "Type mismatch in trace'/EOp2"
     trace' n c (ERef s1) = (n Map.! s1, Map.empty, c)
+
+    traceArrayLift :: String -> Int -> [Float] -> Trace
+    traceArrayLift _ _ []     = Map.empty
+    traceArrayLift s i (x:xs) =
+        let txs = traceArrayLift s (i + 1) xs
+            s'  = s ++ '!' : show i
+        in  Map.insert s' (TLift (TFloat s' x)) txs
+
+    traceArraySum :: String -> Int -> [Float] -> Trace
+    traceArraySum _ _ [_]      = Map.empty
+    traceArraySum s i (x:y:xs) =
+        where (TFloat)
 
     traceMap :: TEnvironment -> Int -> Int -> (TValue -> Int -> (TValue, Trace, Int)) -> TValue -> (TValue, Trace, Int)
     traceMap _ c _ _ (TArray s [])     = (TArray s [], Map.empty, c)
