@@ -71,7 +71,7 @@
     \cc{This probably needs a more precise description.}
 
     \subsection{Tracing Steps}
-        \cc{This subsection might replace Section \ref{sec:lambda}.}\\
+        \cc{Should maybe add an eval function to make it clearer when things are actually resolved}\\
         We will now define some basic tracing steps for some arbitrary language.
         To do this we first define a language on which we will operate.
         We do this in Listing \ref{lst:language}, where we define a basic lambda calculus.
@@ -96,154 +96,77 @@
         Only our $\lambda$-abstraction is a little more complex.
         Since nothing actually happens our trace here is empty, however this does not mean that we can ignore the steps the abstracted expression takes, those we might still be interested in.
         So we can rewrite the lambda expression, to move the trace over, and trace only the body when it is actually applied.
+        This also has as a side-effect on application, that we call the result of the trace of $s$ as a function, as that will be the rewritten lambda expression we got from tracing abstraction.
 
         \begin{lstlisting}[caption=First tracing rules, captionpos=b, float=tbhp, label=lst:tracing, mathescape, escapeinside={!*}{*!}, gobble=12]
             $\text{trace}(\Gamma,n\in\mathbb{R})\Rightarrow(r, \{r\})$
             $\text{trace}(\Gamma,\lambda(x:\tau).s)\Rightarrow(\lambda(x:\tau).trace(\Gamma\cup x, s),\emptyset)$
-            $\text{trace}(\Gamma,s\ t)\Rightarrow(s\ t,\text{trace}(\Gamma,t)\cup\text{trace}(\Gamma\cup\{t\},s))$
+            $\text{trace}(\Gamma,s\ t)\Rightarrow(s\ t,\text{trace}(\Gamma, s)(\text{trace}(\Gamma,t)))$
         \end{lstlisting}
 
-    \subsection{Tracing steps} \label{sec:lambda}
-        {\color{red}The main problem in this section is that the program transformations say nothing about the actual trace produced.}\\
-        We will now define some of the basic tracing steps for some arbitrary language as logical transformation rules.
-        To do this we first define a very basic language on which we will operate.
-        We will start by only defining the most basic types for our variables: $\tau,\sigma\coloneqq\mathbb{R}\|\sigma\to\tau$.
-        This allows us to define a simple lambda calculus on real numbers:
+        It should be noted that tracing abstraction and application this way, effectively traces away function types.
+        This is generally what we want from a trace, but it is somewhat meaningful to realize what would happen if we chose not to do that.
+        In that case, we no longer deconstruct functions, so our trace on abstraction becomes similar to our trace on real numbers: we just return the function as we found it.
+        As for application, we can no longer trace the body of our function, so all that remains in tracing its argument and perhaps denoting the application took place.
 
-        \begin{prooftree}
-            \AxiomC{}
-            \RightLabel{(Constant)}
-            \UnaryInfC{$\Gamma\vdash c:\tau$}
-        \end{prooftree}
+        Now to illustrate how tracing would eliminate control-flow, we would first need to add some to our language.
+        We can extend our language in Listing \ref{lst:language} with an if-then-else statement, as shown in Listing \ref{lst:language_bools}.
+        To make it easy on ourselves, we also add Booleans to the language as the domain $\mathbb{B}=\{\top,\bot\}$.
+        However, we maintain, that we only want to trace to contain real numbers as a type, so this means we need to trace away these Booleans, and any operations performed on them.
+        Which brings us to the following point: there are no operations in our language.
+        Whilst we can validate our if-then-else statement with literal Booleans, it is probably more meaningful to actually add operations to the language.
+        To keep things general, we will denote these operations as $Op_\mathbb{X}(s_1,\dots,s_n):\mathbb{Y}$, where $\mathbb{X}$ is the domain of the $n$ inputs $s_1,\dots,s_n$, and $\mathbb{Y}$ is the codomain of the operation.
+        To keep things simple, we will assume for now that $Op:\mathbb{X}^n\to\mathbb{Y}$ for any domain $\mathbb{X}$ and codomain $\mathbb{Y}$.
+        In Listing \ref{lst:language_bool}, we define three domain-codomain pairs for basic operators: $\mathbb{B}\to\mathbb{B}$ for comparing Booleans, $\mathbb{R}\to\mathbb{B}$ for comparing real numbers, and $\mathbb{R}\to\mathbb{R}$ for arithmetic operators.
+        These three categories encapsulate the vast majority of what are considered ``basic operations''.
 
-        \begin{prooftree}
-            \AxiomC{$(x:\tau)\in\Gamma$}
-            \RightLabel{(Variable)}
-            \UnaryInfC{$\Gamma\vdash x:\tau$}
-        \end{prooftree}
+        \begin{lstlisting}[caption=Booleans and operations in the language, captionpos=b, float=tbhp, label=lst:language_bools, mathescape, escapeinside={!*}{*!}, gobble=12]
+            !*\textbf{Types:}*!
+                $\sigma,\tau\coloneqq\mathbb{B}\|\mathbb{R}\|\sigma\to\tau$
 
-        \begin{prooftree}
-            \AxiomC{$\Gamma\cup\{x:\tau\}\vdash e:\sigma$}
-            \RightLabel{(Abstraction)}
-            \UnaryInfC{$\Gamma\vdash(\lambda(x:\tau).e):\tau\to\sigma$}
-        \end{prooftree}
+            !*\textbf{Terms:}*!
+                $s,t\coloneqq$
+                    $\dots$
+                  | $\texttt{if }s:\mathbb{B}\texttt{ then }t_\top:\tau\texttt{ else }t_\bot:\tau$
+                  | $Op_\mathbb{B}(s_1,\dots,s_n):\mathbb{B}$
+                  | $Op_\mathbb{R}(s_1,\dots,s_n):\mathbb{B}$
+                  | $Op_\mathbb{R}(s_1,\dots,s_n):\mathbb{R}$
+        \end{lstlisting}
 
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash e_1:\tau\to\sigma$}
-            \AxiomC{$\Gamma\vdash e_2:\tau$}
-            \RightLabel{(Application)}
-            \BinaryInfC{$\Gamma\vdash(e_1\ e_2):\sigma$}
-        \end{prooftree}
+        With our language expanded, we can now trace away our control flow.
+        The resulting cases are shown in Listing \ref{lst:tracing_bool}.
+        It should be noted that even though we do not trace away basic operations in general, we can (and in fact have to) trace away operations either on Booleans, or producing Booleans, as we have no Boolean type in our trace.
+        This effectively also means, that if we have some operations on real numbers, that only result in eventually producing some Boolean, these operations are omitted from the trace as well.
+        If this seems odd, we must remind ourselves that the trace we produce can be interpreted as a ``single-line program'', and any part of the program that only exists to produce values that are irrelevant to the single-line program, should not be in the trace.
+        It should also be noted that if we'd want to keep Booleans in our trace for some reason, this would still allow us to trace away control-flow, like the if-then-else statements, as they would still be irrelevant for the single-line program.
+        However, what to do with the steps leading up to these would become a little more unclear.
+        If the Booleans used by the if-then-else statements in our program are either part of the input or output of the program, they should probably also be present in the trace.
+        However, if they are not, then they should probably still be discarded as being irrelevant to the single-line program.
 
-        Tracing through this lambda calculus is then fairly straightforward.
-        We will define $\tau_T$ and $\sigma_T$ as type indicators for the types of the trace, such that $\tau_T,\sigma_T\subseteq\tau,\sigma$.
-        In reality this might mean we do not add our ungrounded types like $\tau\to\sigma$ to our traced types $\tau_T$ and $\sigma_T$.
-        However, as stated before, as long as the types in $\tau_T,\sigma_T$ do not contain types that are not in $\tau_T$ and $\sigma_T$, they may contain ungrounded types as well.
+        \begin{lstlisting}[caption=Control flow tracing, captionpos=b, float=tbhp, label=lst:tracing_bool, mathescape, escapeinside={!*}{*!}, gobble=12]
+            $\text{trace}(\Gamma,\texttt{if }s\texttt{ then }t_\top\texttt{ else }t_\bot)\Rightarrow\texttt{if }s\texttt{ then }\text{trace}(\Gamma,t_\top)\texttt{ else }\text{trace}(\Gamma,t_\bot)$
+            $\text{trace}(\Gamma,Op_\mathbb{B}(e_1,\dots,e_n):\mathbb{B})\Rightarrow(Op_\mathbb{B}(e_1,\dots,e_n):\mathbb{B},\emptyset)
+            $\text{trace}(\Gamma,Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{B})\Rightarrow(Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{B},\emptyset)
+            $\text{trace}(\Gamma,Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{R})\Rightarrow(Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{R},\{Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{R}\}\cup\text{trace}(\Gamma,e_1)\cup\dots\cup\text{trace}(\Gamma,e_n))$
+        \end{lstlisting}
 
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash e:\tau$}
-            \RightLabel{(Tracing Introduction)}
-            \UnaryInfC{$\Gamma\vdash\text{trace}(e):\tau_T$}
-        \end{prooftree}
+        Finally, we'd like to take a quick look at let-bindings.
+        In general let-bindings are can be treated as lambda abstractions that are instantly applied.
+        This allows us to streamline them a little more than we were able to with regular lambda abstractions in Listing \ref{lst:tracing}.
+        So, we can add let-bindings to our language in Listing \ref{lst:language_let}, and their trace in Listing \ref{lst:tracing_let}.
 
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash\text{trace}(c:\tau_T)$}
-            \RightLabel{(Constant tracing)}
-            \UnaryInfC{$\Gamma\vdash c:\tau_T$}
-        \end{prooftree}
+        \begin{lstlisting}[caption=Adding let bindings, captionpos=b, float=tbhp, label=lst:language_let, mathescape, escapeinside={!*}{*!}, gobble=12]
+            !*\textbf{Types: }*!$\dots$
 
-        \begin{prooftree}
-            \AxiomC{$(x:\tau_T)\in\Gamma$}
-            \AxiomC{$\Gamma\vdash\text{trace}(x)$}
-            \RightLabel{(Variable tracing)}
-            \BinaryInfC{$\Gamma\vdash x:\tau_T$}
-        \end{prooftree}
+            !*\textbf{Terms:}*!
+                $s,t\coloneqq$
+                    $\dots$
+                  | $\texttt{let }s:\sigma\texttt{ in }t:\tau$
+        \end{lstlisting}
 
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash\text{trace}(\lambda(x:\tau).e:\tau\to\sigma)$}
-            \RightLabel{(Abstraction tracing)}
-            \UnaryInfC{$\Gamma\vdash\lambda(x:\tau_T).\text{trace}(e):\tau_T\to\sigma_T$}
-        \end{prooftree}
-
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash e_1:\tau\to\sigma$}
-            \AxiomC{$\Gamma\vdash e_2:\tau$}
-            \AxiomC{$\Gamma\vdash\text{trace}(e_1\ e_2)$}
-            \RightLabel{(Application tracing)}
-            \TrinaryInfC{$\Gamma\vdash((\text{trace}(e_1):\tau_T\to\sigma_T)\ (\text{trace}(e_2):\tau_T)):\sigma_T$}
-        \end{prooftree}
-
-        It should be noted that tracing abstraction and application means tracing away the function type $\tau\to\sigma$.
-        If we want to keep the function type in our final trace, we cannot trace away abstraction, and the application process would end with the trace of $e_2$, rather than the trace of $e_1\ e_2$.
-
-        We can then extend this with the basic operations we wish to preserve through our trace.
-        We will denote these operations as $op(e_1,\dots,e_n)$ with $n$ arguments, for all functions $op:\tau'^n\to\sigma'$ where $\tau'\in\{\mathbb{B},\mathbb{R}\}$ and $\sigma'\in\{\mathbb{B},\mathbb{R}\}$.
-        Of course, to ever make use of operations that either take in or produce Boolean values, we would need to extend our variable types with the Boolean domain $\mathbb{B}$.
-        This means our new variable types become $\tau,\sigma\coloneqq\mathbb{B}\|\mathbb{R}\|\tau\to\sigma$.
-        As long as we want to preserve these operations $op$ in our trace they are generally homomorphic:
-
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash e_1:\tau',\dots,e_n:\tau'$}
-            \AxiomC{$\tau'\in\{\mathbb{B},\mathbb{R}\}$}
-            \AxiomC{$\sigma'\in\{\mathbb{B},\mathbb{R}\}$}
-            \RightLabel{(Basic operations)}
-            \TrinaryInfC{$\Gamma\vdash op(e_1,\dots,e_n):\sigma'$}
-        \end{prooftree}
-
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash\text{trace}(op(e_1:\tau_1,\dots,e_n:\tau_n):\sigma):\sigma_T$}
-            \RightLabel{(Trace on basic operations)}
-            \UnaryInfC{$\Gamma\vdash op(\text{trace}(e_1):\tau_T,\dots,\text{trace}(e_n):\tau_T):\sigma_T$}
-        \end{prooftree}
-
-        We can also introduce control flow in the form of if-then-else statements.
-        These will be eliminated by the tracing process, because when we are tracing, we've been provided with the inputs and can thus resolve the conditional and only follow the relevant branch.
-        
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash t_c:\mathbb{B}$}
-            \AxiomC{$\Gamma\vdash t_\top:\tau$}
-            \AxiomC{$\Gamma\vdash t_\bot:\sigma$}
-            \RightLabel{(if-then-else introduction)}
-            \TrinaryInfC{$\Gamma\vdash\texttt{if }t_c:\mathbb{B}\texttt{ then }t_\top:\tau\texttt{ else }t_\bot:\sigma$}
-        \end{prooftree}
-
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash\text{trace}(\texttt{if }t_c:\mathbb{B}\texttt{ then }t_\top:\tau\texttt{ else }t_\bot:\sigma)$}
-            \AxiomC{$t_c=\top$}
-            \RightLabel{(if-then-else tracing, true)}
-            \BinaryInfC{$\Gamma\vdash\text{trace}(t_\top:\tau):\tau_T$}
-        \end{prooftree}
-
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash\text{trace}(\texttt{if }t_c:\mathbb{B}\texttt{ then }t_\top:\tau\texttt{ else }t_\bot:\sigma)$}
-            \AxiomC{$t_c=\bot$}
-            \RightLabel{(if-then-else tracing, false)}
-            \BinaryInfC{$\Gamma\vdash\text{trace}(t_\bot:\sigma):\sigma_T$}
-        \end{prooftree}
-
-        Finally, we will also introduce let-bindings as a program structure.
-        While let-bindings can be rewritten as lambda expressions, and then traced that way, it is actually a little simpler to trace let-bindings directly, as they are executed immediately anyways.
-        This results in us technically tracing away the let bindings, but as the output of the tracing function can be interpreted as a list of let-bindings this remains only a technicality.
-        \cc{This is probably too vague.}
-
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash e_1:\tau$}
-            \AxiomC{$\Gamma\cup\{e_1:\tau\}\vdash e_2:\sigma$}
-            \RightLabel{(let-binding introduction)}
-            \BinaryInfC{$\Gamma\vdash(\texttt{let }e_1:\tau\texttt{ in }e_2:\sigma):\sigma$}
-        \end{prooftree}
-
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash(\texttt{let }e_1:\tau\texttt{ in }e_2:\sigma):\sigma$}
-            \RightLabel{(let-binding elimination)}
-            \UnaryInfC{$\Gamma\cup\{e_1:\tau\}\vdash e_2:\sigma$}
-        \end{prooftree}
-        
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash\text{trace}((\texttt{let }e_1:\tau\texttt{ in }e_2:\sigma):\sigma):\sigma_T$}
-            \RightLabel{(tracing let-binding)}
-            \UnaryInfC{$\Gamma\cup\{\text{trace}(e_1:\tau):\tau_T\}\vdash\text{trace}(e_2:\sigma):\sigma_T$}
-        \end{prooftree}
+        \begin{lstlisting}[caption=Tracing let bindings, captionpos=b, float=tbhp, label=lst:language_let, mathescape, escapeinside={!*}{*!}, gobble=12]
+            $\text{trace}(\Gamma,\texttt{let }s\texttt{ in }t)\Rightarrow(\texttt{let }s\texttt{ in }t,\texttt{trace}(\Gamma,s)\cup\texttt{trace}(\Gamma\cup\{s\},t))$
+        \end{lstlisting}
 
     \subsection{Array Tracing}
         Of course, the glaring omission from the lambda calculus described in Section \ref{sec:lambda} is data structures as present in modern programming languages.
