@@ -70,7 +70,7 @@
     Tracing a trace should return the trace itself, because if it returned some more minimal trace, we know that the first trace wasn't properly finished.
     \cc{This probably needs a more precise description.}
 
-    \subsection{Tracing Steps}
+    \subsection{Tracing Steps} \label{sec:steps}
         \cc{Should maybe add an eval function to make it clearer when things are actually resolved}\\
         We will now define some basic tracing steps for some arbitrary language.
         To do this we first define a language on which we will operate.
@@ -169,44 +169,28 @@
         \end{lstlisting}
 
     \subsection{Array Tracing}
-        Of course, the glaring omission from the lambda calculus described in Section \ref{sec:lambda} is data structures as present in modern programming languages.
-        As an example, in this section, we will discuss tracing data in an array.
-        We will also limit our array discussion to arrays of real numbers for now.
+        An important part of programming, including the programs where tracing is likely to be used, is arrays and other data structures.
+        Tracing data structures like arrays might seem a little more complicated, however the main is whether or not we want to trace away arrays.
+        For our upcoming example, we first add Arrays to our language from Section \ref{sec:steps} (Listings \ref{lst:language}, \ref{lst:language_bools}, and \ref{lst:language_let}), as shown in Listing \ref{lst:language_array}.
+        For now, we will limit our discussion to arrays of real numbers only.
+        We will also operations on arrays, currently just as the operations producing a single value from the array, like indexing or sum ($[\mathbb{R}]\to\mathbb{R}$), and those that produce a new array like mapping a function ($[\mathbb{R}]\to[\mathbb{R}]$).
 
-        If we want to trace an array, there is an obvious naïve approach.
-        Rather than tracing the array as a single data object, we instead trace every entry in our array as a loose variable.
-        We can easily extend the example in Section \ref{sec:lambda} for lambda calculus:
+        \begin{lstlisting}[caption=Adding arrays, captionpos=b, float=tbhp, label=lst:language_array, mathescape, escapeinside={!*}{*!}, gobble=12]
+            !*\textbf{Types: }*!
+                $\sigma,\tau\coloneqq\mathbb{B}\|\mathbb{R}\|\sigma\to\tau\|[\mathbb{R}]$
 
-        \[
-            \tau,\sigma\coloneqq\mathbb{R}\|\mathbb{B}\|\sigma\to\tau\|[\mathbb{R}]
-        \]
-
-        \begin{prooftree}
-            \AxiomC{$v_1:\mathbb{R},\dots,v_n:\mathbb{R}$}
-            \RightLabel{(Array Introduction)}
-            \UnaryInfC{$\Gamma\vdash[v_1,\dots,v_n]:[\mathbb{R}]$}
-        \end{prooftree}
-
-        \begin{prooftree}
-            \AxiomC{$\Gamma\vdash\text{trace}([v_1,\dots,v_n]:[\mathbb{R}]):[\tau_T]$}
-            \RightLabel{(Array Tracing)}
-            \UnaryInfC{$\Gamma\vdash[\text{trace}(v_1),\dots,\text{trace}(v_n)]:[\tau_T]$}
-        \end{prooftree}
-
-        The major disadvantage here is that we effectively deconstruct the array to trace it.
-        Oftentimes, operations on arrays are applied to all or predefined subset of the items in the array.
-        For instance if we want to square all the numbers in an array, we wouldn't need to see every item in the array being squared in the array.
-        This is just extra information that probably makes our trace less useable.
-        Instead, we might envision an entry in our trace where this we see the whole array being ``squared'', as this would convey almost the same information as having an entry for every item in the array.
+            !*\textbf{Terms:}*!
+                $s,t\coloneqq$
+                    $\dots$
+                  | $[s_1:\mathbb{R},\dots,s_n:\mathbb{R}]$
+                  | $Op_{[\mathbb{R}]}(s):\mathbb{R}$
+                  | $Op_{[\mathbb{R}]}(s):[\mathbb{R}]$
+        \end{lstlisting}
         
-        Unfortunately, this isn't always possible.
-        Imagine an array with the numbers one through ten, and a function that only squares an item in the array if it is a three.
-        We immediately find that there is no way to have the trace of this function mapped on our array as a single entry in the trace.
-        After all, the function does something different for threes than for other numbers.
-        So in this case we might need to use our naïve approach from before.
+        If we were to extend our example from Section \ref{sec:steps}, we might be inclined to not allow arrays in our trace (and keep only real numbers), meaning we would have to trace the arrays away.
+        This isn't too complicated.
+        When tracing away arrays as terms, we might break them down into their component parts.
+        For instance, an array of real numbers, can be traced as just the instantiation of every real number in the array.
+        The same goes for operations done to the array: we just trace these operations as they are applied to the individual items in the array, effectively ignoring the fact that these items were in an array in the first place.
 
-        This also highlights something about tracing functions mapped over arrays.
-        If that function contains some branching (like an if-then-else statement checking for threes), we have to trace the application of the function to every item in the array individually.
-        However, if the mapped function is the same for all items in the array (it does not branch), we would actually be able to trace it as if applying the function to the array rather than its items.
-
-        \cc{There's probably more to say about array tracing.}
+        
