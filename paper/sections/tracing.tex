@@ -39,7 +39,10 @@
     Say we keep only functions ($\tau\to\sigma$) and real numbers, but our input program contains a function with type $\tau\to(\sigma_1+\sigma_2)$.
     This typing is valid in our input program, but no longer valid in our trace, so we find ourselves in a bind.
     It will be impossible to trace away the sum-type in the output of the function without tracing away the function itself.
-    \cc{Why exactly?}
+    This is because tracing something away basically means either deconstructing or ignoring it in the trace.
+    For instance, tracing away a sum type like a tuple, would mean tracing the individual components of that tuple to trace it away.
+    Whereas keeping things in the trace means just keeping them untouched.
+    Therefor, we cannot keep a type like a function $\tau\to(\sigma_1+\sigma_2)$ in our trace, because we can't access the sum type without tracing away the function.
     Of course we could define a subset $\tau',\sigma'\coloneqq\mathbb{R}$ and then redefine (or add a definition for) our function so that it becomes $\tau'\to\sigma'$ making it safe to trace.
     This then underlines the rule at work here: we can only keep types that do cannot be constructed of types that are traced away.
     This is why the grounded types are a natural set of types to keep, as they are never constructed from other types.
@@ -59,19 +62,12 @@
     But other operations, such as operations on arrays, can also be added depending on the ultimate goal of the tracing.
     More importantly, as we expect our trace to be akin to a single-line program, we may consider our trace as a series of let-bindings, akin to A-normal form\cn.
     
-    % Implementation wise, we might produce our trace as a set of 2-tuples, consisting of a name and the actual operation.
-    % As long as every component is properly named, every operation in the trace can actually just refer to a previous point in the trace, except for new data.
-    % This way, we can get away with only storing the operation themselves, and not their inputs or results.
-    % Because of this implementation method, we will assume our trace to be of the type $\{(\text{String},\text{Operation})\}$.
-    % This will allow us the freedom to add to the trace as in taking the union of two sets: the current trace, and any items to add to it.
-    
     Finally, we can quickly check if our trace is correct by executing both the input program and the trace, and checking if their results are the same.
     We can also check the correctness of our tracing program by running it with a trace as its input program.
     Tracing a trace should return the trace itself, because if it returned some more minimal trace, we know that the first trace wasn't properly finished.
     \cc{This probably needs a more precise description.}
 
     \subsection{Tracing Steps} \label{sec:steps}
-        \cc{Should maybe add an eval function to make it clearer when things are actually resolved}\\
         We will now define some basic tracing steps for some arbitrary language.
         To do this we first define a language on which we will operate.
         We do this in Listing \ref{lst:language}, where we define a basic lambda calculus.
