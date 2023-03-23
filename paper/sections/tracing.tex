@@ -76,7 +76,7 @@
         To do this we first define a language on which we will operate.
         We do this in Listing \ref{lst:language}, where we define a basic lambda calculus.
 
-        \begin{lstlisting}[caption=Basic language, captionpos=b, float=tbhp, label=lst:language, mathescape, escapeinside={!*}{*!}, gobble=12]
+        \begin{quicklst}[caption=Basic language, label=lst:language, gobble=12]
             !*\textbf{Types:}*!
                 $\sigma,\tau\coloneqq\mathbb{R}\|\sigma\to\tau$
 
@@ -85,11 +85,12 @@
                     $r\in\mathbb{R}\quad$!*\text{(literal real numbers)}*!
                   | $\lambda(x:\tau).s\quad$!*\text{(abstraction)}*!
                   | $s\ t\quad$!*\text{(application)}*!
-        \end{lstlisting}
+        \end{quicklst}
 
         Tracing through this lambda calculus is pretty straightforward.
         We will define our trace as some set $T$, such that our tracing function $\text{trace}(\Gamma,e)\to(v,T)$ gives us a value $v$ and a trace $T$ for some environment $\Gamma$ and some expression $e$.
         To not go into too much implementational overhead, we will ignore naming the items in the trace for now.
+        However, for clarity we will define an evaluation function $\text{eval}(e)$, which will resolve an expression $e$ to its actual value.
         Listing \ref{lst:tracing} shows how tracing the lambda calculus in Listing \ref{lst:language} would look like, if we choose to trace away the function type (leaving us only with real numbers).
         We see that tracing a literal real number $r$, just adds $r$ to the trace, after all real numbers aren't traced away.
         Tracing application is also fairly straightforward: we trace the argument $t$, and then the function $s$ with $t$.
@@ -98,11 +99,13 @@
         So we can rewrite the lambda expression, to move the trace over, and trace only the body when it is actually applied.
         This also has as a side-effect on application, that we call the result of the trace of $s$ as a function, as that will be the rewritten lambda expression we got from tracing abstraction.
 
-        \begin{lstlisting}[caption=First tracing rules, captionpos=b, float=tbhp, label=lst:tracing, mathescape, escapeinside={!*}{*!}, gobble=12]
-            $\text{trace}(\Gamma,n\in\mathbb{R})\Rightarrow(r, \{r\})$
+        \begin{quicklst}[caption=First tracing rules, label=lst:tracing, gobble=12]
+            $\text{trace}(\Gamma,r\in\mathbb{R})\Rightarrow(r, \{r\})$
+
             $\text{trace}(\Gamma,\lambda(x:\tau).s)\Rightarrow(\lambda(x:\tau).trace(\Gamma\cup x, s),\emptyset)$
-            $\text{trace}(\Gamma,s\ t)\Rightarrow(s\ t,\text{trace}(\Gamma, s)(\text{trace}(\Gamma,t)))$
-        \end{lstlisting}
+
+            $\text{trace}(\Gamma,s\ t)\Rightarrow(\text{eval}(s\ t),\text{trace}(\Gamma, s)(\text{trace}(\Gamma,t)))$
+        \end{quicklst}
 
         It should be noted that tracing abstraction and application this way, effectively traces away function types.
         This is generally what we want from a trace, but it is somewhat meaningful to realize what would happen if we chose not to do that.
@@ -117,10 +120,10 @@
         Whilst we can validate our if-then-else statement with literal Booleans, it is probably more meaningful to actually add operations to the language.
         To keep things general, we will denote these operations as $Op_\mathbb{X}(s_1,\dots,s_n):\mathbb{Y}$, where $\mathbb{X}$ is the domain of the $n$ inputs $s_1,\dots,s_n$, and $\mathbb{Y}$ is the codomain of the operation.
         To keep things simple, we will assume for now that $Op:\mathbb{X}^n\to\mathbb{Y}$ for any domain $\mathbb{X}$ and codomain $\mathbb{Y}$.
-        In Listing \ref{lst:language_bool}, we define three domain-codomain pairs for basic operators: $\mathbb{B}\to\mathbb{B}$ for comparing Booleans, $\mathbb{R}\to\mathbb{B}$ for comparing real numbers, and $\mathbb{R}\to\mathbb{R}$ for arithmetic operators.
+        In Listing \ref{lst:language_bools}, we define three domain-codomain pairs for basic operators: $\mathbb{B}\to\mathbb{B}$ for comparing Booleans, $\mathbb{R}\to\mathbb{B}$ for comparing real numbers, and $\mathbb{R}\to\mathbb{R}$ for arithmetic operators.
         These three categories encapsulate the vast majority of what are considered ``basic operations''.
 
-        \begin{lstlisting}[caption=Booleans and operations in the language, captionpos=b, float=tbhp, label=lst:language_bools, mathescape, escapeinside={!*}{*!}, gobble=12]
+        \begin{quicklst}[caption=Booleans and operations in the language, label=lst:language_bools, gobble=12]
             !*\textbf{Types:}*!
                 $\sigma,\tau\coloneqq\mathbb{B}\|\mathbb{R}\|\sigma\to\tau$
 
@@ -131,7 +134,7 @@
                   | $Op_\mathbb{B}(s_1,\dots,s_n):\mathbb{B}$
                   | $Op_\mathbb{R}(s_1,\dots,s_n):\mathbb{B}$
                   | $Op_\mathbb{R}(s_1,\dots,s_n):\mathbb{R}$
-        \end{lstlisting}
+        \end{quicklst}
 
         With our language expanded, we can now trace away our control flow.
         The resulting cases are shown in Listing \ref{lst:tracing_bool}.
@@ -143,39 +146,43 @@
         If the Booleans used by the if-then-else statements in our program are either part of the input or output of the program, they should probably also be present in the trace.
         However, if they are not, then they should probably still be discarded as being irrelevant to the single-line program.
 
-        \begin{lstlisting}[caption=Control flow tracing, captionpos=b, float=tbhp, label=lst:tracing_bool, mathescape, escapeinside={!*}{*!}, gobble=12]
-            $\text{trace}(\Gamma,\texttt{if }s\texttt{ then }t_\top\texttt{ else }t_\bot)\Rightarrow\texttt{if }s\texttt{ then }\text{trace}(\Gamma,t_\top)\texttt{ else }\text{trace}(\Gamma,t_\bot)$
-            $\text{trace}(\Gamma,Op_\mathbb{B}(e_1,\dots,e_n):\mathbb{B})\Rightarrow(Op_\mathbb{B}(e_1,\dots,e_n):\mathbb{B},\emptyset)
-            $\text{trace}(\Gamma,Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{B})\Rightarrow(Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{B},\emptyset)
-            $\text{trace}(\Gamma,Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{R})\Rightarrow(Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{R},\{Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{R}\}\cup\text{trace}(\Gamma,e_1)\cup\dots\cup\text{trace}(\Gamma,e_n))$
-        \end{lstlisting}
+        \begin{quicklst}[caption=Control flow tracing, label=lst:tracing_bool, gobble=12]
+            $\text{trace}(\Gamma,\texttt{if }s\texttt{ then }t_\top\texttt{ else }t_\bot)\Rightarrow\texttt{if }\text{eval}(s)\texttt{ then }\text{trace}(\Gamma,t_\top)\texttt{ else }\text{trace}(\Gamma,t_\bot)$
+
+            $\text{trace}(\Gamma,Op_\mathbb{B}(e_1,\dots,e_n):\mathbb{B})\Rightarrow(\text{eval}(Op_\mathbb{B}(e_1,\dots,e_n):\mathbb{B}),\emptyset)$
+
+            $\text{trace}(\Gamma,Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{B})\Rightarrow(\text{eval}(Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{B}),\emptyset)$
+
+            $\text{trace}(\Gamma,Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{R})\Rightarrow(\text{eval}(Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{R}),$
+                $\{Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{R}\}\cup\text{trace}(\Gamma,e_1)\cup\dots\cup\text{trace}(\Gamma,e_n))$
+        \end{quicklst}
 
         Finally, we'd like to take a quick look at let-bindings.
         In general let-bindings are can be treated as lambda abstractions that are instantly applied.
         This allows us to streamline them a little more than we were able to with regular lambda abstractions in Listing \ref{lst:tracing}.
         So, we can add let-bindings to our language in Listing \ref{lst:language_let}, and their trace in Listing \ref{lst:tracing_let}.
 
-        \begin{lstlisting}[caption=Adding let bindings, captionpos=b, float=tbhp, label=lst:language_let, mathescape, escapeinside={!*}{*!}, gobble=12]
+        \begin{quicklst}[caption=Adding let bindings, label=lst:language_let, gobble=12]
             !*\textbf{Types: }*!$\dots$
 
             !*\textbf{Terms:}*!
                 $s,t\coloneqq$
                     $\dots$
                   | $\texttt{let }s:\sigma\texttt{ in }t:\tau$
-        \end{lstlisting}
+        \end{quicklst}
 
-        \begin{lstlisting}[caption=Tracing let bindings, captionpos=b, float=tbhp, label=lst:language_let, mathescape, escapeinside={!*}{*!}, gobble=12]
-            $\text{trace}(\Gamma,\texttt{let }s\texttt{ in }t)\Rightarrow(\texttt{let }s\texttt{ in }t,\texttt{trace}(\Gamma,s)\cup\texttt{trace}(\Gamma\cup\{s\},t))$
-        \end{lstlisting}
+        \begin{quicklst}[caption=Tracing let bindings, label=lst:tracing_let, gobble=12]
+            $\text{trace}(\Gamma,\texttt{let }s\texttt{ in }t)\Rightarrow(\text{eval}(\texttt{let }s\texttt{ in }t),\texttt{trace}(\Gamma,s)\cup\texttt{trace}(\Gamma\cup\{\text{eval}(s)\},t))$
+        \end{quicklst}
 
     \subsection{Array Tracing}
         An important part of programming, including the programs where tracing is likely to be used, is arrays and other data structures.
-        Tracing data structures like arrays might seem a little more complicated, however the main is whether or not we want to trace away arrays.
+        Tracing data structures like arrays might seem a little more complicated, however the main point is about whether or not we want to trace away arrays.
         For our upcoming example, we first add Arrays to our language from Section \ref{sec:steps} (Listings \ref{lst:language}, \ref{lst:language_bools}, and \ref{lst:language_let}), as shown in Listing \ref{lst:language_array}.
         For now, we will limit our discussion to arrays of real numbers only.
-        We will also operations on arrays, currently just as the operations producing a single value from the array, like indexing or sum ($[\mathbb{R}]\to\mathbb{R}$), and those that produce a new array like mapping a function ($[\mathbb{R}]\to[\mathbb{R}]$).
+        We will also add operations on arrays, currently just as the operations producing a single value from the array, like indexing or sum ($[\mathbb{R}]\to\mathbb{R}$), and those that produce a new array like mapping a function ($[\mathbb{R}]\to[\mathbb{R}]$).
 
-        \begin{lstlisting}[caption=Adding arrays, captionpos=b, float=tbhp, label=lst:language_array, mathescape, escapeinside={!*}{*!}, gobble=12]
+        \begin{quicklst}[caption=Adding arrays, label=lst:language_array, gobble=12]
             !*\textbf{Types: }*!
                 $\sigma,\tau\coloneqq\mathbb{B}\|\mathbb{R}\|\sigma\to\tau\|[\mathbb{R}]$
 
@@ -185,12 +192,46 @@
                   | $[s_1:\mathbb{R},\dots,s_n:\mathbb{R}]$
                   | $Op_{[\mathbb{R}]}(s):\mathbb{R}$
                   | $Op_{[\mathbb{R}]}(s):[\mathbb{R}]$
-        \end{lstlisting}
+        \end{quicklst}
         
         If we were to extend our example from Section \ref{sec:steps}, we might be inclined to not allow arrays in our trace (and keep only real numbers), meaning we would have to trace the arrays away.
         This isn't too complicated.
         When tracing away arrays as terms, we might break them down into their component parts.
         For instance, an array of real numbers, can be traced as just the instantiation of every real number in the array.
         The same goes for operations done to the array: we just trace these operations as they are applied to the individual items in the array, effectively ignoring the fact that these items were in an array in the first place.
+        Listing \ref{lst:tracing_array_1} shows what this would look like in the form of our earlier examples.
+        Here we have $Op^*_\mathbb{R}:\mathbb{R}$ as the operator we're applying on a single item in an array.
+        To clarify, for operations like sum, $Op^*_\mathbb{R}:\mathbb{R}$ would be $s_1+\dots+s_n$, where all these binary additions would end up in the trace as single operations.
+        For operations like mapping a function, $Op^*_\mathbb{R}:\mathbb{R}$, would represent the function application on a single item in the array, where we would trace the body of the function like we had traced generic application earlier.
+        \cc{This is probably too vague, the notation also falls a bit short here.}
 
-        
+        \begin{quicklst}[caption=Tracing away arrays, label=lst:tracing_array_1, gobble=12]
+            $\text{trace}([\Gamma,s_1,\dots,s_n])\Rightarrow([s_1,\dots,s_n],\text{trace}(\Gamma,s_1)\cup\dots\cup\text{trace}(\Gamma,s_n))$
+
+            $\text{trace}(\Gamma,Op_{[\mathbb{R}]}([s_1,\dots,s_n]):\mathbb{R})\Rightarrow(\text{eval}(Op_{[\mathbb{R}]}([s_1,\dots,s_n]):\mathbb{R}),$
+                $\text{trace}(Op^*_\mathbb{R}(s_1):\mathbb{R})\cup\dots\cup\text{trace}(Op^*_\mathbb{R}(s_n):\mathbb{R}))$
+
+            $\text{trace}(Op_{[\mathbb{R}]}([s_1,\dots,s_n]):[\mathbb{R}])\Rightarrow(\text{eval}(Op_{[\mathbb{R}]}([s_1,\dots,s_n]):[\mathbb{R}]),$
+                $\text{trace}(Op^*_\mathbb{R}(s_1):\mathbb{R})\cup\dots\cup\text{trace}(Op^*_\mathbb{R}(s_n):\mathbb{R}))$
+        \end{quicklst}
+
+        We see in Listing \ref{lst:tracing_array_1} a template for tracing almost any operation performed on the array.
+        This comes down to knowing that array operations are interested in the individual values of the array, rather than the array as an closed object.
+        However, tracing arrays away also comes with some caveats.
+        First off, if we have large arrays, our traces will become very large, even if the operations performed on these large arrays are relatively simple.
+        Furthermore, it might be unclear in the trace that we were even using arrays in the original program, which depending on your application might be a problem.
+
+        So what if we do not trace away these arrays?
+        We would first need to extend the types in our trace with arrays ($[\mathbb{R}]$), however if we wish to keep arrays in our trace this should not be a problem.
+        What is more interesting is how we would actually trace these arrays.
+        Like the operations on regular real numbers, if we keep arrays in our trace, we keep operations on arrays in our trace.
+        This makes tracing arrays really simple as well, as we just repeat arrays and operations on arrays in our trace, this is shown in Listing \ref{lst:tracing_array_2}.
+        This does mean that we have no room for individual array items in our trace, except if they actually come out of the array (like with indexing).
+
+        \begin{quicklst}[caption=Keeping arrays in traces, label=lst:tracing_array_2, gobble=12]
+            $\text{trace}(\Gamma,[s_1,\dots,s_n])\Rightarrow([s_1,\dots,s_n],\{[s_1,\dots,s_n]\})$
+
+            $\text{trace}(\Gamma,Op_{[\mathbb{R}]}(s):\mathbb{R})\Rightarrow(\text{eval}(Op_{[\mathbb{R}]}(s):\mathbb{R}),\{Op_{[\mathbb{R}]}(s):\mathbb{R}\}\cup\text{trace}(\Gamma,s))$
+
+            $\text{trace}(\Gamma,Op_{[\mathbb{R}]}(s):[\mathbb{R}])\Rightarrow(\text{eval}(Op_{[\mathbb{R}]}(s):[\mathbb{R}]),\{Op_{[\mathbb{R}]}(s):[\mathbb{R}]\}\cup\text{trace}(\Gamma,s))$
+        \end{quicklst}
