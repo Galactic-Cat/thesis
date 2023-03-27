@@ -27,7 +27,7 @@ module Main (main) where
     result :: EValue
     result = eval input test
 
-    (tv, tt) = trace input test
+    (tv, tt) = trace input True test
 
     main :: IO ()
     main = do
