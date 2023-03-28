@@ -62,13 +62,13 @@
     
     \subsection{Tracing Correctness} \label{sec:correctness}
         Before going into specifics on how to implement tracing, it would be a good idea to formalize when a trace is actually correct.
-        To discuss this, we imagine we have some program with an any valid input, and a tracing function that given said program and input, returns a trace and an output to the program.
-        Furthermore, we require the trace to be a program itself, which when run also produces the same output.
-        We can denote this, for clarity, as in Equation \ref{eq:trace_eq}.
-        \begin{equation}
-            \label{eq:trace_eq}
-            \text{trace}:\text{Program}\times\text{Input}\rightarrow\text{Trace}\times\text{Output}
-        \end{equation}
+        Like we posed before, we start with some program formed from some expression language $S$, and some input $I$ that is valid for that program.
+        Given some trace language $T$ we can write a tracing function that gives us the trace and output of a specific program and input combination.
+        We can formalize this as follows, where we denote $O$ for our program output:
+        \begin{align*}
+            \text{eval}&:S\times I\to O\\
+            \text{trace}&:S\times I\to T\times O
+        \end{align*}
 
     \subsection{Tracing Steps} \label{sec:steps}
         We now define some basic tracing steps for some arbitrary language.
