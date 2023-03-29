@@ -9,7 +9,7 @@
     
     To start, it will help us along to set clear expectations for what we expect a tracing function to do.
     In the simplest terms, we expect a tracing program to take an input program with a set of inputs, and output a ``trace''.
-    This output trace is generally defined as a set of operations the input program performed on the inputs.
+    This output trace is defined as a sequence of operations the input program performed on the inputs to get the expected output.
     A term often used for an output trace is a ``single-line program''\cn: a program without control flow.
     Clearing control flow like if-then-else statements is only natural: after all, provided some input the program will only walk down one variation of this branching path.
 
@@ -38,36 +38,63 @@
     This typing is valid in our input program, but no longer valid in our trace, so we find ourselves in a bind.
     It will be impossible to trace away the sum-type in the output of the function without tracing away the function itself.
     This is because tracing something away basically means either deconstructing or ignoring it in the trace.
-    For instance, tracing away a sum type like a tuple, would mean tracing the individual components of that tuple to trace it away.
+    For instance, tracing away a tuple, would mean tracing the individual components of that tuple to trace it away.
     Whereas keeping things in the trace means just keeping them untouched.
     Therefor, we cannot keep a type like a function $\tau\to(\sigma_1+\sigma_2)$ in our trace, because we can't access the sum type without tracing away the function.
     Of course we could define a subset $\tau',\sigma'\coloneqq\mathbb{R}$ and then redefine (or add a definition for) our function so that it becomes $\tau'\to\sigma'$ making it safe to trace.
     This then underlines the rule at work here: we can only keep types that do cannot be constructed of types that are traced away.
     This is why the ground types are a natural set of types to keep, as they are never constructed from other types.
-    In a similar vein, although slightly less clear, we also trace away any operators that perform on or produce types that we do not keep in our trace.
-    For example, when we choose to keep only real numbers, we can trace away all Boolean values and operations that take in or produce Boolean values.
-    After all, they will be meaningless in our limited trace language.
-    This ``tracing away'' often comes down to rewriting or omitting these operations in the trace.
-    For operations that influence control flow this is simple, however if we have types that we wish to trace away in some data that we use or (more importantly) combine with types that we do wish to keep, omission might mean our trace is missing steps.
-    We might be able to express these types we trace away as types we keep, if they are necessary, but this might be more work than it is worth.
+    
+    In a similar vein, we may also encounter operators in our trace that take in or produce types that are not allowed in our trace.
+    For operators that produce a type that is not in our trace, tracing them away is no problem.
+    Since we know we will not be interested in whatever output they produce for our trace, we can simply omit them from the trace altogether.
+    For instance, if we keep only real numbers in our trace like before, an operator returning a Boolean value is of no interest for the trace.
+    However, this is not a simple for operations that take in a type we wish to trace away, yet produce a type we wish to keep in our trace.
+    A simple example of this is the ``switch'' operator, which takes in a Boolean value and two values of another type, of which it returns one depending on the Boolean value (see Equation \ref{eq:switch}).
+    \begin{equation}
+        \begin{aligned}
+            \texttt{switch}(\top,a,b)&=a\\
+            \texttt{switch}(\bot,a,b)&=b
+        \end{aligned}
+        \label{eq:switch}
+    \end{equation}
+    While the switch operator looks like it mimics if-then-else statements, it is generally accepted that it does so in a non-lazy way\cn, where both $a$ and $b$ are evaluated before returning either.
+    The main problem here is that we wish to keep operators that produce types we keep in our trace, yet we do not wish (or are not even able to) express the Boolean value in our trace.
+    Now, due to switch statement's likeness to if-then-else, the solution here is pretty clear: only trace the value that gets returned.
+    However, it is not always that easy: as we introduce arrays and array operations in Section \ref{sec:arrays}, we will see how operations like mapping on an array need a special solution.
+    
+    This all is to say that the while we can either ignore or homomorphically copy basic operations for our trace, sometimes we need a special solution.
+    This is mainly because we do not want to lose the information that is needed to execute the trace as a single-line program, even if that means fudging our operations a little.
+    This also means that, while the operations in our trace language might be a subset of the operations in the original expression language, they might contain modified operations
 
     It seems that our tracing definition comes down to a function that takes in a program and an input to that program, and outputs the steps taken by the program run on the input.
     Where the input program takes uses some set of types, of which only a subset is kept in the trace, where the types in this subset may not be constructed using types from outside of the subset.
-
     What now remains is a concrete definition of the output of the tracing program.
     We have already stated that it should somehow contain the steps done in by the input program.
     The steps we wish to record are generally basic operations like arithmetic operations.
     But other operations, such as operations on arrays, can also be added depending on the ultimate goal of the tracing.
     More importantly, as we expect our trace to be akin to a single-line program, we may consider our trace as a series of let-bindings, akin to A-normal form\cn.
+    This means storing each operation as a pair of a unique name or id and the operation performed (like the name and value of the declarations in a let-binding).
     
     \subsection{Tracing Correctness} \label{sec:correctness}
-        Before going into specifics on how to implement tracing, it would be a good idea to formalize when a trace is actually correct.
+        Before going into specifics on how to implement tracing, it would also be a good idea to formalize when a trace is actually correct.
         Like we posed before, we start with some program formed from some expression language $S$, and some input $I$ that is valid for that program.
-        Given some trace language $T$ we can write a tracing function that gives us the trace and output of a specific program and input combination.
-        We can formalize this as follows, where we denote $O$ for our program output:
+        If we would wish to resolve a program $S$ on input $I$, then we'd need some evaluation function that produces the expected output $O$.
+        Now, given some trace language $T$ we can write a tracing function that gives us the trace and output of a specific program and input combination.
+        We can write this out as follows the two functions in eval and trace:
         \begin{align*}
             \text{eval}&:S\times I\to O\\
             \text{trace}&:S\times I\to T\times O
+        \end{align*}
+
+        With this we can formalize two criteria for our trace.
+        First, the trace, as a single line program $t\in T$ produced by the trace function needs to produce the correct output.
+        Now, as noted previously, 
+
+        \begin{align*}
+            &\forall t\in\text{ExprExpr}\cap\text{SimpExpr}:\\
+            &\forall i\in\text{Input}:\\
+            &\texttt{snd}(\text{trace}(t,i))=\text{run}(t,i)\wedge(\forall j\in I:\text{run}(\texttt{fst}(\text{trace}(t,j)),j)=\text{run}(t,j))
         \end{align*}
 
     \subsection{Tracing Steps} \label{sec:steps}
@@ -174,7 +201,7 @@
             $\text{trace}(\Gamma,\texttt{let }s\texttt{ in }t)\Rightarrow(\text{eval}(\texttt{let }s\texttt{ in }t),\texttt{trace}(\Gamma,s)\cup\texttt{trace}(\Gamma\cup\{\text{eval}(s)\},t))$
         \end{quicklst}
 
-    \subsection{Array Tracing}
+    \subsection{Array Tracing} \label{sec:arrays}
         An important part of programming, including the programs where tracing is likely to be used, is arrays and other data structures.
         Tracing data structures like arrays might seem a little more complicated, however the main point is about whether or not we want to trace away arrays.
         For our upcoming example, we first add Arrays to our language from Section \ref{sec:steps} (Listings \ref{lst:language}, \ref{lst:language_bools}, and \ref{lst:language_let}), as shown in Listing \ref{lst:language_array}.
