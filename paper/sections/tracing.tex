@@ -24,11 +24,11 @@
 
     We can imagine our simplified language, in which we will express our trace -- as a language with fewer type formers.
     By choosing a subset of the type formers in our program, we can indicate which data structures should be traced away.
-    A common option is to keep only ``ground types'', where we defined a ground type as a type that isn't constructed of other types.
+    A common option is to keep only ``ground types'', where we defined a ground type as a type that is not constructed of other types.
     Looking at our example in Equation \ref{eq:typebase}, a trace keeping only these ground types would keep only the real numbers and the Booleans as they are not built of other types.
     Another common option is to keep only continuous types, tracing away all unground and discrete types.
     Doing that on our type set in Equation \ref{eq:typebase} would leave us with only the real numbers.
-    This is under the assumption that the discrete types aren't actually used as data we're interested in tracing of course, but since tracing will remove all control flow from the program, keeping Booleans and operations on Booleans intact may be meaningless. 
+    This is under the assumption that the discrete types are not actually used as data we are interested in tracing of course, but since tracing will remove all control flow from the program, keeping Booleans and operations on Booleans intact may be meaningless. 
 
     The main take-away here is that there is some freedom of choice in what to trace away.
     What parts we keep and what parts we trace away is very dependent on what information we want to keep in our trace, which in turn is dependent on what our exact goal is for the tracing in the first place.
@@ -40,7 +40,7 @@
     This is because tracing something away basically means either deconstructing or ignoring it in the trace.
     For instance, tracing away a tuple, would mean tracing the individual components of that tuple to trace it away.
     Whereas keeping things in the trace means just keeping them untouched.
-    Therefor, we cannot keep a type like a function $\tau\to(\sigma_1+\sigma_2)$ in our trace, because we can't access the sum type without tracing away the function.
+    Therefor, we cannot keep a type like a function $\tau\to(\sigma_1+\sigma_2)$ in our trace, because we cannot access the sum type without tracing away the function.
     Of course we could define a subset $\tau',\sigma'\coloneqq\mathbb{R}$ and then redefine (or add a definition for) our function so that it becomes $\tau'\to\sigma'$ making it safe to trace.
     This then underlines the rule at work here: we can only keep types that do cannot be constructed of types that are traced away.
     This is why the ground types are a natural set of types to keep, as they are never constructed from other types.
@@ -81,21 +81,51 @@
         Like we posed before, we start with some program formed from some expression language $S$, and some input $I$ that is valid for that program.
         If we would wish to resolve a program $S$ on input $I$, then we'd need some evaluation function that produces the expected output $O$.
         Now, given some trace language $T$ we can write a tracing function that gives us the trace and output of a specific program and input combination.
-        We can write this out as follows the two functions in eval and trace:
-        \begin{align*}
-            \text{eval}&:S\times I\to O\\
-            \text{trace}&:S\times I\to T\times O
-        \end{align*}
+        We can write this out as the two functions eval and trace in Equation \ref{eq:evalntrace}.
+        \begin{equation}
+            \begin{aligned}
+                \text{eval}&:S\times I\to O\\
+                \text{trace}&:S\times I\to T\times O
+            \end{aligned}
+            \label{eq:evalntrace}
+        \end{equation}
 
         With this we can formalize two criteria for our trace.
         First, the trace, as a single line program $t\in T$ produced by the trace function needs to produce the correct output.
-        Now, as noted previously, 
+        Now, as mentioned before, $t$ might contain transformed operations, that are not present in $S$.
+        Therefor we either need to look at traces $t\in S\cap T$, or use a different evaluation function.
+        For now we'll use the former, to assert the output criterium in Equation \ref{eq:output}.
+        Here we state that for any program $s$ with any input $i$: if the trace $t$ is also a valid program in $S$, that the evaluation of $t$ on $i$ should be the same as the evaluation of $s$ on $i$ or the output $o$ we got out of the tracing function.
+        \begin{equation}
+            \begin{aligned}
+                &\forall s\in S\\
+                &\forall i\in I\\
+                &\text{trace}(s,i)=(t\in T,o\in O)\\
+                &(t\in S\cap T)\to(\text{eval}(s,i)=\text{eval}(t,i)=o)
+            \end{aligned}
+            \label{eq:output}
+        \end{equation}
 
-        \begin{align*}
-            &\forall t\in\text{ExprExpr}\cap\text{SimpExpr}:\\
-            &\forall i\in\text{Input}:\\
-            &\texttt{snd}(\text{trace}(t,i))=\text{run}(t,i)\wedge(\forall j\in I:\text{run}(\texttt{fst}(\text{trace}(t,j)),j)=\text{run}(t,j))
-        \end{align*}
+        Furthermore, tracing a trace $t$ should also return that trace $t$.
+        This is because we want to find the minimal straight-line program using tracing, and if tracing the trace we found reduces it somehow to a more minimal program, we know that the original trace was incomplete.
+        This is expressed in Equation \ref{eq:mintrace}, where we assert that for some program $s\in S$ and some input $i\in I$, the trace $t$ (produced by tracing $s$ on $i$), is the same as the trace obtained from tracing $t$ itself.
+        \begin{equation}
+            \begin{aligned}
+                &\forall s\in S\\
+                &\forall i\in I\\
+                &\text{trace}(s,i)=(t\in T,o\in O)\\
+                &\text{trace}(t,i)=(t,o)
+            \end{aligned}
+            \label{eq:mintrace}
+        \end{equation}
+
+        The above statements, assert that a trace should produce the correct output value as expected from the input program, and that a trace should be its own trace.
+        While these assertions do not say a lot about the nature of the actual trace, they do set some baseline requirements for the trace, and proving the correctness of a trace.
+        This vagueness on the contents of the trace is partly because we cannot really say anything about a trace without dissecting the source program as well, which would bring us to a point very close to actual tracing itself.
+        In another part however, this is because we do not want to make any assumptions what can or cannot be in our trace.
+        While it is likely that some there is significant overlap between $S$ and $T$, as mentioned, we might need some additions to $T$ to actually be able to trace everything in $S$ correctly.
+        Also, whilst in practice it might be meaningless, a trace where $T=\emptyset$ is in itself not incorrect: any trace would simply be empty.
+        In a similar vein a trace where $S\subseteq T$ would also be meaningless in practice, it is also not wrong: any trace would simply be the same as the source program.
 
     \subsection{Tracing Steps} \label{sec:steps}
         We now define some basic tracing steps for some arbitrary language.
@@ -118,7 +148,7 @@
         To not go into too much implementational overhead, we will ignore naming the items in the trace for now.
         However, for clarity we will define an evaluation function $\text{eval}(e)$, which will resolve an expression $e$ to its actual value.
         Listing \ref{lst:tracing} shows how tracing the lambda calculus in Listing \ref{lst:language} would look like, if we choose to trace away the function type (leaving us only with real numbers).
-        We see that tracing a literal real number $r$, just adds $r$ to the trace, after all real numbers aren't traced away.
+        We see that tracing a literal real number $r$, just adds $r$ to the trace, after all real numbers are not traced away.
         Tracing application is also fairly straightforward: we trace the argument $t$, and then the function $s$ with $t$.
         Only our $\lambda$-abstraction is a little more complex.
         Since nothing actually happens our trace here is empty, however this does not mean that we can ignore the steps the abstracted expression takes, those we might still be interested in.
@@ -221,12 +251,12 @@
         \end{quicklst}
         
         If we were to extend our example from Section \ref{sec:steps}, we might be inclined to not allow arrays in our trace (and keep only real numbers), meaning we would have to trace the arrays away.
-        This isn't too complicated.
+        This is not too complicated.
         When tracing away arrays as terms, we might break them down into their component parts.
         For instance, an array of real numbers, can be traced as just the instantiation of every real number in the array.
         The same goes for operations done to the array: we just trace these operations as they are applied to the individual items in the array, effectively ignoring the fact that these items were in an array in the first place.
         Listing \ref{lst:tracing_array_1} shows what this would look like in the form of our earlier examples.
-        Here we have $Op^*_\mathbb{R}:\mathbb{R}$ as the operator we're applying on a single item in an array.
+        Here we have $Op^*_\mathbb{R}:\mathbb{R}$ as the operator we are applying on a single item in an array.
         To clarify, for operations like sum, $Op^*_\mathbb{R}:\mathbb{R}$ would be $s_1+\dots+s_n$, where all these binary additions would end up in the trace as single operations.
         For operations like mapping a function, $Op^*_\mathbb{R}:\mathbb{R}$, would represent the function application on a single item in the array, where we would trace the body of the function like we had traced generic application earlier.
         \cc{This is probably too vague, the notation also falls a bit short here.}
