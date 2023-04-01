@@ -127,109 +127,197 @@
         Also, whilst in practice it might be meaningless, a trace where $T=\emptyset$ is in itself not incorrect: any trace would simply be empty.
         In a similar vein a trace where $S\subseteq T$ would also be meaningless in practice, it is also not wrong: any trace would simply be the same as the source program.
 
-    \subsection{Tracing Steps} \label{sec:steps}
+        As an additional note, Equation \ref{eq:output} also implies something interesting.
+        If we want our trace to output the same value as the original program, we cannot trace away the type of the original programs output.
+        Say we trace away Boolean values when we are tracing a program that returns a Boolean value, then we find ourselves stuck, because we trace away all operations that produce Boolean values.
+        And of course, if our trace is not allowed to produce any Boolean values, we cannot produce the required output either.
+        Therefor we must assure that the type of the output is valid in our trace as well.
+
+    \subsection{Basic Tracing} \label{sec:steps}
         We now define some basic tracing steps for some arbitrary language.
-        To do this we first define a language on which we will operate.
+        For clarity's sake, we will do this is with Haskell\cn code.
+        To do this we first define a language and values on which we will operate.
         We do this in Listing \ref{lst:language}, where we define a basic lambda calculus.
+        Here the value types are represented as the algebraic data type (ADT) \texttt{Value}, where we find constructors for Booleans (\texttt{VBool}), real numbers (\texttt{VReal}), and functions (\texttt{VFunc}).
+        Then we define the four terms of a basic lambda calculus in the \texttt{Expression} ADT: application (\texttt{EApply}), abstraction (\texttt{ELambda}), loose values (\texttt{ELift}), and variable reference (\texttt{ERef}).
+        To make tracing a little more interesting we also add in if-then-else statements (\texttt{EIf}) and binary operators (\texttt{EOp2}).
+        For those binary operators, we define four operations in the separate \texttt{Op2} ADT: addition (\texttt{Add}), equality (\texttt{Equ}), multiplication (\texttt{Mul}), and inequality (\texttt{Neq}).
+        Finally, to make use of variable references, we define an environment as a mapping of strings to values.
+        We can use this language and evaluate it, an example of this has been provided in Appendix \ref{sec:eval}.
 
-        \begin{quicklst}[caption=Basic language, label=lst:language, gobble=12]
-            !*\textbf{Types:}*!
-                $\sigma,\tau\coloneqq\mathbb{R}\|\sigma\to\tau$
+        \begin{haskell}[caption=Minimal lambda calculus with added if-then-else and binary operators, label=lst:language, gobble=12]
+            data Value = VBool Bool | VReal Float | VFunc (Value -> Value)
 
-            !*\textbf{Terms:}*!
-                $s,t\coloneqq$
-                    $r\in\mathbb{R}\quad$!*\text{(literal real numbers)}*!
-                  | $\lambda(x:\tau).s\quad$!*\text{(abstraction)}*!
-                  | $s\ t\quad$!*\text{(application)}*!
-        \end{quicklst}
+            data Expression
+                = EApply  Expression Expression
+                | EIf     Expression Expression Expression
+                | ELambda String     Expression
+                | ELift   Value
+                | EOp2    Op2        Expression Expression
+                | ERef    String
 
-        Tracing through this lambda calculus is pretty straightforward.
-        We will define our trace as some set $T$, such that our tracing function $\text{trace}(\Gamma,e)\to(v,T)$ gives us a value $v$ and a trace $T$ for some environment $\Gamma$ and some expression $e$.
-        To not go into too much implementational overhead, we will ignore naming the items in the trace for now.
-        However, for clarity we will define an evaluation function $\text{eval}(e)$, which will resolve an expression $e$ to its actual value.
-        Listing \ref{lst:tracing} shows how tracing the lambda calculus in Listing \ref{lst:language} would look like, if we choose to trace away the function type (leaving us only with real numbers).
-        We see that tracing a literal real number $r$, just adds $r$ to the trace, after all real numbers are not traced away.
-        Tracing application is also fairly straightforward: we trace the argument $t$, and then the function $s$ with $t$.
-        Only our $\lambda$-abstraction is a little more complex.
-        Since nothing actually happens our trace here is empty, however this does not mean that we can ignore the steps the abstracted expression takes, those we might still be interested in.
-        So we can rewrite the lambda expression, to move the trace over, and trace only the body when it is actually applied.
-        This also has as a side-effect on application, that we call the result of the trace of $s$ as a function, as that will be the rewritten lambda expression we got from tracing abstraction.
+            data Op2 = Add | Equ | Mul | Neq
 
-        \begin{quicklst}[caption=First tracing rules, label=lst:tracing, gobble=12]
-            $\text{trace}(\Gamma,r\in\mathbb{R})\Rightarrow(r, \{r\})$
+            type Environment = Map String Value
+        \end{haskell}
 
-            $\text{trace}(\Gamma,\lambda(x:\tau).s)\Rightarrow(\lambda(x:\tau).trace(\Gamma\cup x, s),\emptyset)$
+        With our language in Listing \ref{lst:language}, we can almost start tracing.
+        However, we must first decide which parts of the language we keep, and which parts we wish to trace away.
+        In the previous section, we talked about how we can do this by selecting which type formers we wish to keep.
+        In Listing \ref{lst:language}, we have practically defined the types of our values by the data constructors present in the \texttt{Value} ADT as Booleans, real numbers, and functions.
+        Let us now choose to keep only real numbers in the trace.
 
-            $\text{trace}(\Gamma,s\ t)\Rightarrow(\text{eval}(s\ t),\text{trace}(\Gamma, s)(\text{trace}(\Gamma,t)))$
-        \end{quicklst}
+        We now define a new ADT for traced values in Listing \ref{lst:traced}.
+        This is only so we can incorporate a name into the values we wish to keep in our trace.
+        These names will help us read the trace, and can be incrementing numbers or something entirely random, as long as they are unique.
+        The basic idea is here to feed the \texttt{trace} function a number with which to generate the steps' names from, and increment the number every time we do.
+        However, since this clutters the code while not being very interesting, we will assume we have some function \texttt{getName} that provides us with a unique name.
+        Furthermore, it is important to see that we still have Boolean values and functions in our \texttt{TValue} ADT, even though we only wish to keep real numbers in our trace.
+        This is because we might still need these values to resolve expressions, even if they never end up in the trace.
+        We might also achieve this by extending our original \texttt{Value} ADT (from Listing \ref{lst:language}) with traced variants of values, but this is merely a point of preference.
+        Finally, we have also changed the signature of the function value to return a trace as well, as we move on to functions we will see how this works.
+        
+        \begin{haskell}[caption=Basic trace building blocks, label=lst:traced, gobble=12]
+            data TValue = TBool Bool
+                        | TReal String Float
+                        | TFunc (TValue -> (TValue, Trace))
 
-        It should be noted that tracing abstraction and application this way, effectively traces away function types.
-        This is generally what we want from a trace, but it is somewhat meaningful to realize what would happen if we chose not to do that.
-        In that case, we no longer deconstruct functions, so our trace on abstraction becomes similar to our trace on real numbers: we just return the function as we found it.
-        As for application, we can no longer trace the body of our function, so all that remains in tracing its argument and perhaps denoting the application took place.
+            data Traced = TLift TValue | TOp2 Op2 String String
+            
+            type TEnvironment = Map String TValue
 
-        Now to illustrate how tracing would eliminate control-flow, we would first need to add some to our language.
-        We can extend our language in Listing \ref{lst:language} with an if-then-else statement, as shown in Listing \ref{lst:language_bools}.
-        To make it easy on ourselves, we also add Booleans to the language as the domain $\mathbb{B}=\{\top,\bot\}$.
-        However, we maintain, that we only want to trace to contain real numbers as a type, so this means we need to trace away these Booleans, and any operations performed on them.
-        Which brings us to the following point: there are no operations in our language.
-        Whilst we can validate our if-then-else statement with literal Booleans, it is probably more meaningful to actually add operations to the language.
-        To keep things general, we will denote these operations as $Op_\mathbb{X}(s_1,\dots,s_n):\mathbb{Y}$, where $\mathbb{X}$ is the domain of the $n$ inputs $s_1,\dots,s_n$, and $\mathbb{Y}$ is the codomain of the operation.
-        To keep things simple, we will assume for now that $Op:\mathbb{X}^n\to\mathbb{Y}$ for any domain $\mathbb{X}$ and codomain $\mathbb{Y}$.
-        In Listing \ref{lst:language_bools}, we define three domain-codomain pairs for basic operators: $\mathbb{B}\to\mathbb{B}$ for comparing Booleans, $\mathbb{R}\to\mathbb{B}$ for comparing real numbers, and $\mathbb{R}\to\mathbb{R}$ for arithmetic operators.
-        These three categories encapsulate the vast majority of what are considered ``basic operations''.
+            type Trace = [(String, Traced)]
 
-        \begin{quicklst}[caption=Booleans and operations in the language, label=lst:language_bools, gobble=12]
-            !*\textbf{Types:}*!
-                $\sigma,\tau\coloneqq\mathbb{B}\|\mathbb{R}\|\sigma\to\tau$
+            getName :: String
+        \end{haskell}
 
-            !*\textbf{Terms:}*!
-                $s,t\coloneqq$
-                    $\dots$
-                  | $\texttt{if }s:\mathbb{B}\texttt{ then }t_\top:\tau\texttt{ else }t_\bot:\tau$
-                  | $Op_\mathbb{B}(s_1,\dots,s_n):\mathbb{B}$
-                  | $Op_\mathbb{R}(s_1,\dots,s_n):\mathbb{B}$
-                  | $Op_\mathbb{R}(s_1,\dots,s_n):\mathbb{R}$
-        \end{quicklst}
+        First however, with our basic building blocks for tracing set up, lets trace away these boolean values.
+        We do this with the trace function in Listing \ref{lst:trace_bool}.
+        For now, we will leave out abstraction and application, as it might be easier to talk about tracing away Booleans first.
 
-        With our language expanded, we can now trace away our control flow.
-        The resulting cases are shown in Listing \ref{lst:tracing_bool}.
-        It should be noted that even though we do not trace away basic operations in general, we can (and in fact have to) trace away operations either on Booleans, or producing Booleans, as we have no Boolean type in our trace.
-        This effectively also means, that if we have some operations on real numbers, that only result in eventually producing some Boolean, these operations are omitted from the trace as well.
-        If this seems odd, we must remind ourselves that the trace we produce can be interpreted as a ``single-line program'', and any part of the program that only exists to produce values that are irrelevant to the single-line program, should not be in the trace.
-        It should also be noted that if we'd want to keep Booleans in our trace for some reason, this would still allow us to trace away control-flow, like the if-then-else statements, as they would still be irrelevant for the single-line program.
-        However, what to do with the steps leading up to these would become a little more unclear.
-        If the Booleans used by the if-then-else statements in our program are either part of the input or output of the program, they should probably also be present in the trace.
-        However, if they are not, then they should probably still be discarded as being irrelevant to the single-line program.
+        \begin{haskell}[caption=Tracing away Boolean values, label=lst:trace_bool, gobble=12]
+            trace :: TEnvironment -> Expression -> (TValue, Trace)
+            trace n (EIf e1 e2 e3) =
+                -- Since we e1 should resolve in a Boolean value, we do not need to trace it.
+                let v1 = eval n e1
+                in  case v1 of
+                    -- We can check for the type of v1 and its value in one go
+                    -- We trace only the relevant branch
+                    (VBool True)  -> trace n e2
+                    (VBool False) -> trace n e3
+                    _             -> error "Type mismatch in trace/EIf"
+            
+            trace n (ELift v) =
+                -- Check if v is a value we would like to trace
+                case v of
+                    -- If yes return the transformed value with its simple trace
+                    (VReal v) ->
+                        -- Generate a name for this step and make the TValue
+                        let s  = getName
+                            v' = TReal s v
+                        -- Combine the TValue with a trace of its instantiation
+                        in  (v', [(s, v')])
+                    -- If we do not wish to trace something, we can just return the value 
+                    -- with an empty trace.
+                    (VBool v) -> (TBool v, [])
+                    -- Instantiation is not allowed for functions, they need to be 
+                    -- abstracted using ELambda
+                    _         -> error "Type mismatch in trace/ELift"
 
-        \begin{quicklst}[caption=Control flow tracing, label=lst:tracing_bool, gobble=12]
-            $\text{trace}(\Gamma,\texttt{if }s\texttt{ then }t_\top\texttt{ else }t_\bot)\Rightarrow\texttt{if }\text{eval}(s)\texttt{ then }\text{trace}(\Gamma,t_\top)\texttt{ else }\text{trace}(\Gamma,t_\bot)$
+            trace n (EOp2 op e1 e2) =
+                -- We again first trace e1 and e2
+                let (v1, t1) = trace n e1
+                    (v2, t2) = trace n e2
+                    -- We get a ready name in case we need it
+                    s = getName
+                -- This case syntax allows us to select for the right operator with the 
+                -- right value types at the same time.
+                in  case (op, v1, v2) of
+                    -- Since add and mul take in reals and produce one too, we trace both 
+                    -- the operation and the origins of v1 and v2
+                    (Add, TReal s1 a, TReal s2 b) -> (TFloat s (a + b),
+                        (TOp2 op s1 s2) : t1 ++ t2)
+                    (Mul, TReal s1 a, TReal s2 b) -> (TFloat s (a * b),
+                        (TOp2 op s1 s2) : t1 ++ t2)
+                    -- For operations producing Bools we only return the result, but they
+                    -- are not traced, and therefor return an empty trace
+                    (Equ, TBool _  a, TBool _  b) -> (TBool (a == b), [])
+                    (Equ, TReal _  a, TReal _  b) -> (TBool (a == b), [])
+                    (Neq, TBool _  a, TBool _  b) -> (TBool (a /= b), [])
+                    (Neq, TReal _  a, TReal _  b) -> (TBool (a /= b), [])
+                    _                             -> error "Type mismatch in trace/EOp2"
 
-            $\text{trace}(\Gamma,Op_\mathbb{B}(e_1,\dots,e_n):\mathbb{B})\Rightarrow(\text{eval}(Op_\mathbb{B}(e_1,\dots,e_n):\mathbb{B}),\emptyset)$
+            -- There is nothing to trace when fetching a variable, but we still need to
+            -- actually get the value
+            trace n (ERef s1) = (n ! s1, [])
+        \end{haskell}
 
-            $\text{trace}(\Gamma,Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{B})\Rightarrow(\text{eval}(Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{B}),\emptyset)$
+        When we trace away Booleans, like in Listing \ref{lst:trace_bool}, it is useful to think about where these Boolean values actually come up.
+        In our minimal language from Listing \ref{lst:language}, there are only three points: when they are included as literal values, as the input or output to basic operations, or as the conditional in if-then-else statements.
+        
+        Let us start with the easiest first: literal Boolean values.
+        When we encounter literal values during tracing, and they are of a type we wish to keep for our trace, we simply add their instantiation to the trace (as \texttt{TLift} in Listings \ref{lst:traced} and \ref{lst:trace_bool}).
+        This is extremely straightforward: those values might be used by the operations we wish to trace, so they should be included in the trace themselves as well.
+        For values of types we wish to trace away, we simply do not include them in the trace.
+        After all, our trace should be fine without them, as we do not include any operations that require them in our trace, right?
+        For now this seems obvious: if we look at the language in Listing \ref{lst:language}, we see that there are no other uses for Booleans values than the use in the equality and inequality operators, and as the conditional in the if-then-else statement.
+        Since we plan to trace these away, we do not appear to need these value instantiations in our trace either.
+        However, at the end of Section \ref{sec:correctness} we already discussed what would happen if our program were to return a Boolean value.
+        And in Section \ref{sec:arrays}, we will see how this might not be entirely true when we talk about arrays and operations on arrays like mapping a function.
+        
+        Tracing (away) simple operations like addition and equality (\texttt{EOp2}) are done in a similar vein.
+        If the operation returns a value of a type we wish to keep in our trace, we include the operation in our trace as well.
+        Similarly, if the operation returns a value that we do not wish to keep, we simply do not trace it.
+        Again, if there was an operation that took in a value of a type we do not wish to trace, and returned one that we do wish to trace we run into a problem.
+        Luckily, these operations are not included in our current example.
 
-            $\text{trace}(\Gamma,Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{R})\Rightarrow(\text{eval}(Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{R}),$
-                $\{Op_\mathbb{R}(e_1,\dots,e_n):\mathbb{R}\}\cup\text{trace}(\Gamma,e_1)\cup\dots\cup\text{trace}(\Gamma,e_n))$
-        \end{quicklst}
+        When we trace an if-then-else statement, we know we have to deal with a Boolean regardless.
+        Luckily for us, we know we only need to trace one of the branches.
+        This means quite simply, that we can ignore the if-then-else statement, and act like the program continued at the branch that is chosen.
+        Since the input is provided, we can resolve the conditional immediately, and then just trace the appropriate branch.
 
-        Finally, we'd like to take a quick look at let-bindings.
-        In general let-bindings are can be treated as lambda abstractions that are instantly applied.
-        This allows us to streamline them a little more than we were able to with regular lambda abstractions in Listing \ref{lst:tracing}.
-        So, we can add let-bindings to our language in Listing \ref{lst:language_let}, and their trace in Listing \ref{lst:tracing_let}.
+        Finally, tracing variable references are simple as well.
+        Currently the only named variables that occur are those created in lambda abstractions or those that are provided as inputs.
+        But no matter how they are created, variable reference does not require tracing.
+        This is because the trace will reference the values regardless of whether they are instantiated on the spot or somewhere previously.
+        And if they were defined previously, that definition is already in the trace somewhere.
 
-        \begin{quicklst}[caption=Adding let bindings, label=lst:language_let, gobble=12]
-            !*\textbf{Types: }*!$\dots$
+    \subsection{Function Tracing} \label{sec:functions}
+        With our basic tracing established, we can now talk about tracing functions, which are more complicated.
+        It is the tracing of abstracted functions that is the first issue here.
+        The issue is that when we perform an abstraction (as with \texttt{ELambda}), there is nothing to trace.
+        In fact, we can see this as an instantiation of a function literal, and when functions are not in our set of types to keep in the trace, this abstraction creates an empty trace.
+        However, leaving it at that would mean we never actually trace the body of the function.
+        Yet, at the time of the abstraction, we also do not yet know the input to the function either, meaning we cannot trace the body at that time.
+        We must instead consider how we delay tracing until the function is actually applied.
+        This is where our notation for \texttt{TFunc} (as in Listing \ref{lst:traced}) comes up.
+        We wish that functions while tracing perform tracing themselves, thus return a \texttt{Trace} together with the return value.
+        This is then what we do in the abstraction step: we set the trace on the body of the function as the body of the function we return.
+        Similarly, we also give this tracing function call the environment at the time of abstraction, allowing the function body to access any free variables that were defined at that time.
+        This makes application also very simple: we apply the function, and then just combine the trace of the functions instantiation, with that of the argument, and that of the functions execution.
+        We also trace the functions instantiation, since at the time of application we do not now if the expression that leads to the function does anything else that we might need to trace as well.
+        Finally, this is results in what we see in Listing \ref{lst:trace_func}, where we left out any patterns of trace that were already present in Listing \ref{lst:trace_bool}.
 
-            !*\textbf{Terms:}*!
-                $s,t\coloneqq$
-                    $\dots$
-                  | $\texttt{let }s:\sigma\texttt{ in }t:\tau$
-        \end{quicklst}
-
-        \begin{quicklst}[caption=Tracing let bindings, label=lst:tracing_let, gobble=12]
-            $\text{trace}(\Gamma,\texttt{let }s\texttt{ in }t)\Rightarrow(\text{eval}(\texttt{let }s\texttt{ in }t),\texttt{trace}(\Gamma,s)\cup\texttt{trace}(\Gamma\cup\{\text{eval}(s)\},t))$
-        \end{quicklst}
+        \begin{haskell}[caption=Tracing away functions, label=lst:trace_func, gobble=12]
+            trace :: TEnvironment -> Expression -> (Value, Trace)
+            trace n (EApply e1 e2) =
+                -- First trace e1 and e2
+                let (v1, t1) = trace n e1
+                    (v2, t2) = trace n e2
+                -- Check if v1 actually returns a function
+                in  case v1 of
+                    -- Do the application, return the result and the combined trace
+                    TFunc f -> let (vf, tf) = f v2
+                               in  (vf, tf ++ t2 ++ t1)
+                    _       -> error "Type mismatch in trace/EApply"
+            
+            trace n (ELambda s e1) =
+                -- Define the function, insert value x as variable s into the environment that is currently 
+                -- present, and trace the body
+                let f = TFunc ($\backslash$x -> trace (insert s x) e1)
+                -- Return the function as abstracted function as a value, and no trace
+                in  (f, [])
+        \end{haskell}
 
     \subsection{Array Tracing} \label{sec:arrays}
         An important part of programming, including the programs where tracing is likely to be used, is arrays and other data structures.

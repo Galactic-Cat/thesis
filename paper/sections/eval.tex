@@ -1,0 +1,51 @@
+\section{ADT Evaluation} \label{sec:eval}
+    In Section \ref{sec:steps}, we introduced an extended lambda calculus.
+    In this section we will quickly go over how an evaluator function for this ADT would look like in Haskell.
+    We define our evaluator function in Listing \ref{lst:eval}, using the definitions of \texttt{Expression}, \texttt{Value}, and \texttt{Environment} from Listing \ref{lst:language}.
+
+    \begin{haskell}[caption=ADT Evaluator, label=lst:eval, gobble=8]
+        eval :: Environment -> Expression -> Value
+
+        eval n (EApply e1 e2) =
+                -- Evaluate e1 and e2 first
+            let v1 = eval n e1
+                v2 = eval n e2
+            in  case v1 of              
+                    -- Only apply v1 to v2 if v1 is a function as expected
+                    VFunc f -> f v2
+                    _       -> error "Type mismatch in eval/EApply"
+
+        eval n (EIf e1 e2 e3) =
+            -- Evaluate e1 as the condition of the if-then-else statement
+            case eval n e1 of
+                -- If e1 evaluates to true, evaluate e2
+                VBool True  -> eval n e2
+                -- Otherwise, evaluate e3
+                VBool False -> eval n e3
+                _           -> error "Type mismatch in eval/EIf"
+
+        -- For abstractions, we return the function by moving the evaluation into the body.
+        -- Where we insert the anonymous value x into the environment as it was when the
+        -- function was defined.
+        eval n (ELambda s1 e1) = VFunc !*\$ \textbackslash*!x -> eval (insert s1 x n) e1
+
+        eval n (ELift v1) = v1
+
+        eval n (EOp2 op e1 e2) =
+                -- Evaluate e1 and e2 first
+            let v1 = eval n e1
+                v2 = eval n e2
+                -- This case syntax allows us to select for the right op with the right
+                -- value types at the same time.
+            in case (op, v1, v2) of
+                (Add, VFloat a, VFloat b) -> VFloat !*\$*! a +  b
+                (Equ, VBool  a, VBool  b) -> VBool  !*\$*! a == b
+                (Equ, VFloat a, VFloat b) -> VBool  !*\$*! a == b
+                (Mul, VFloat a, VFloat b) -> VFloat !*\$*! a *  b
+                (Neq, VBool  a, VBool  b) -> VBool  !*\$*! a /= b
+                (Neq, VFloat a, VFloat b) -> VBool  !*\$*! a /= b
+                _                         -> error "Type mismatch in eval/EOp2"
+
+        -- Resolving references means getting the value from the environment by name.
+        eval n (ERef s1) = n ! s1
+    \end{haskell}

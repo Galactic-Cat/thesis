@@ -14,7 +14,7 @@
 \usepackage[x11names]{xcolor}
 \usepackage{listings}
 \usepackage{mathtools}
-\usepackage{xcolor}
+\usepackage[x11names]{xcolor}
 
 % \tolerance=1
 % \emergencystretch=\maxdimen
@@ -40,6 +40,25 @@
     {\lstset{float=tbhp,frame=single,captionpos=b,mathescape=true,escapeinside={!*}{*!},#1}}
     {}
 
+\lstnewenvironment{haskell}[1][]
+    {\lstset{
+        float=tbhp,
+        frame=single,
+        captionpos=b,
+        columns=fullflexible,
+        language=haskell,
+        mathescape=true,
+        escapeinside={!*}{*!},
+        keywordstyle=\color{Blue4}\bfseries,
+        basicstyle=\small\ttfamily,
+        commentstyle=\footnotesize\color{Green4}\normalfont\itshape,
+        keepspaces=true,
+        showstringspaces=false,
+        numbers=left,
+        numberstyle=\tiny,
+        #1}}
+    {}
+
 \title{Paper}
 \author{Simon van Hus\\6147879\\s.vanhus@students.uu.nl}
 \date{\today}
@@ -51,10 +70,15 @@
         Abstract.
     \end{abstract}
 
+    \texttt{This is an {\normalfont amazing test}}\\
+    \texttt{This is an amazing test}
+
     \input{sections/tracing}
 
     \clearpage
     \appendix
     % \bibliographystyle{acm}
     % \bibliography{references}
+
+    \input{sections/eval}
 \end{document}
