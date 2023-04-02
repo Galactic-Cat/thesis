@@ -1,23 +1,26 @@
 module Main (main) where
     import Expression (
-        Expression (ELet, ELambda, EOp0, EOp1, EOp2, ERef),
+        Expression (ELet, EIf, ELambda, EOp0, EOp1, EOp2, ERef),
         Op0 (Iota),
         Op1 (Sum),
-        Op2 (Map, Mul),
-        EValue (EFloat),
+        Op2 (Add, Map, Mul),
+        EValue (EReal, EBool),
         EEnvironment,
         eval)
     import Trace (trace)
     import qualified Data.Map.Strict as Map
 
     input :: EEnvironment
-    input = Map.singleton "x" (EFloat 2)
+    input = Map.fromList [("x", EReal 2), ("y", EBool False)]
 
     test :: Expression
     test =
         ELet "f"
             (ELambda "z"
-                (EOp2 Mul (ERef "z") (ERef "x")))
+                (EIf
+                    (ERef "y")
+                    (EOp2 Mul (ERef "z") (ERef "x"))
+                    (EOp2 Add (ERef "z") (ERef "x"))))
             (ELet "a"
                 (EOp0 (Iota 5))
                 (ELet "b"

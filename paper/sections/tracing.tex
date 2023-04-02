@@ -478,7 +478,7 @@
                     (xsv, xst) = traceArraymap f so sn xs (i + 1)
                 -- To add to the TArray and to rename fv we use this case-of statement
                 in  case (fv, xsv) of
-                    (VReal s' v, TArray _ xsv') ->
+                    (TReal s' v, TArray _ xsv') ->
                         -- Add this item to the new array
                         let vn = TArray sn (v : xsv')
                         -- Rename fv in the function trace to the correct name
@@ -657,7 +657,8 @@
         We write branch-checking into functions in Listing \ref{lst:branching}.
         For most terms we can just commute the branch checking to the arguments of that term, but there are a couple exceptions.
         If-then-else statements are the definition of branching in our language, so they return `true', and no branching can occur in literal instantiation (\texttt{ELift}) or nullary operators (\texttt{Op0}) (literal instantiation can also be rewritten as a nullary operator), so they always return `false'.
-        For terms that may get passed or return a function value (\texttt{TFunc}), we need to check if that function contains branching: this happens in application (\texttt{EApply}) and in variable reference (\texttt{ERef}).
+        Only for variable reference, which may return a value without actually providing a code to check, we need to see if the value is a function, and whether it has the branching flag set or not.
+        This works because we set the branching flag when functions are defined using abstraction, and because functions may not be entered as literals.
 
         \begin{haskell}[caption=Checking for branches, label=lst:branching, gobble=12]
             data TValue
@@ -666,17 +667,10 @@
                 | TFunc Bool (TValue -> (TValue, Trace))
 
             branchCheck :: TEnvironment -> Expression -> Bool
-            branchCheck n (EApply e1 e2) =
-                -- Since we expect a function from e1, we need to trace it to see if that function has the
-                -- branch flag set to True or False
-                let (v1, _) = trace n e1
-                    b2      = branchCheck n e2
-                in  case v1 of
-                    (TFunc b1 _) -> b1 || b2
-            
             -- Encountering an if-else-statement means a encountering a branch
             branchCheck _ (EIf _ _ _) = True
 
+            branchCheck n (EApply e1 e2) = branchCheck n e1 || branchCheck n e2
             branchCheck n (ELambda _ e1) = branchCheck n e1
             branchCheck n (ELet _ e1 e2) = branchCheck n e1 || branchCheck n e2
             -- ELift is always false, because lifting functions is not allowed
@@ -729,10 +723,10 @@
                         let (vs, ts) = traceMapNaive f sa s va 0
                         in  if   b
                             -- If the function contains branching, use the naive method
-                            then (vs, [(s, TMap ts sa)])
+                            then (vs, (s, TMap ts sa) : t1 ++ t2)
                             -- Otherwise use the new method
                             else let t = vectorizeTrace sa s (head ts)
-                                 in  (vs, [(s, TMapV s sa)])
+                                 in  (vs, (s, TMapV t sa) : t1 ++ t2)
 
             vectorizeTrace :: String -> String -> Trace -> Trace
             -- Rename the references to individual items to the whole array
