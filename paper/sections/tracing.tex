@@ -79,7 +79,7 @@
     \subsection{Tracing Correctness} \label{sec:correctness}
         Before going into specifics on how to implement tracing, it would also be a good idea to formalize when a trace is actually correct.
         Like we posed before, we start with some program formed from some expression language $S$, and some input $I$ that is valid for that program.
-        If we would wish to resolve a program $S$ on input $I$, then we'd need some evaluation function that produces the expected output $O$.
+        If we would wish to resolve a program $S$ on input $I$, then we would need some evaluation function that produces the expected output $O$.
         Now, given some trace language $T$ we can write a tracing function that gives us the trace and output of a specific program and input combination.
         We can write this out as the two functions eval and trace in Equation \ref{eq:evalntrace}.
         \begin{equation}
@@ -94,7 +94,7 @@
         First, the trace, as a single line program $t\in T$ produced by the trace function needs to produce the correct output.
         Now, as mentioned before, $t$ might contain transformed operations, that are not present in $S$.
         Therefor we either need to look at traces $t\in S\cap T$, or use a different evaluation function.
-        For now we'll use the former, to assert the output criterium in Equation \ref{eq:output}.
+        For now we will use the former, to assert the output criterium in Equation \ref{eq:output}.
         Here we state that for any program $s$ with any input $i$: if the trace $t$ is also a valid program in $S$, that the evaluation of $t$ on $i$ should be the same as the evaluation of $s$ on $i$ or the output $o$ we got out of the tracing function.
         \begin{equation}
             \begin{aligned}
@@ -496,7 +496,6 @@
         It is worth explicitly stating that every addition done whilst summing the array gets its own unique name and step in the trace.
         This means that an operation that is single step the original program, explodes to a bunch of steps (the length of the array minus one) in the trace.
         This is because we decided to trace away arrays, and we will see later on how we save ourselves from this by not tracing away arrays.
-        \cc{This can be much simpler by just lifting a zero as the start of the sum, I should probably change that}
 
         The map operator is funky in a way similar to sum.
         In essence, we take each item in the array and apply it to the function as expected.
@@ -644,7 +643,106 @@
                         in  (TArray sn (v : vs), xt' : xst)
         \end{haskell}
 
-        % TODO: Write about map with factorization
+        Now, while the naïve way is fine in functionality, it does again create some overhead (a trace for each item in the array) by splitting the trace into multiple smaller traces.
+        And if the function is the same for every item in the array, we may find ourselves saving a lot of redundant data.
+        Now, this may be necessary: at the time we map a function over an array, we do not know if it will act the same for every input.
+        Perhaps there is some control flow in the function body that checks if a number is even, or a factor of three, or something else entirely.
+        In such a case, having a trace for each item may be strictly necessary.
+        However, it also highlights for which functions it may not be: functions without control flow or branching.
+        After all, these functions are little straight-line programs, and should act the same no matter on what input they are applied.
+        Writing a function that checks if a the body of a lambda abstraction contains branching is very simple for this language: currently the only expression term that can introduce branching is the if-then-else statement.
+        Unfortunately, we cannot check that at the moment the we trace a map operator.
+        This is because any function here would already have been abstracted to a \texttt{TArray} value.
+        So, we would need to check for branching when we are abstracting the function and we also need a way to convey if a specific instance of \texttt{TFunc} contains branching or not.
+        We write branch-checking into functions in Listing \ref{lst:branching}.
+        For most terms we can just commute the branch checking to the arguments of that term, but there are a couple exceptions.
+        If-then-else statements are the definition of branching in our language, so they return `true', and no branching can occur in literal instantiation (\texttt{ELift}) or nullary operators (\texttt{Op0}) (literal instantiation can also be rewritten as a nullary operator), so they always return `false'.
+        For terms that may get passed or return a function value (\texttt{TFunc}), we need to check if that function contains branching: this happens in application (\texttt{EApply}) and in variable reference (\texttt{ERef}).
+
+        \begin{haskell}[caption=Checking for branches, label=lst:branching, gobble=12]
+            data TValue
+                = $\ldots$
+                -- Add a branching flag to TFunc
+                | TFunc Bool (TValue -> (TValue, Trace))
+
+            branchCheck :: TEnvironment -> Expression -> Bool
+            branchCheck n (EApply e1 e2) =
+                -- Since we expect a function from e1, we need to trace it to see if that function has the
+                -- branch flag set to True or False
+                let (v1, _) = trace n e1
+                    b2      = branchCheck n e2
+                in  case v1 of
+                    (TFunc b1 _) -> b1 || b2
+            
+            -- Encountering an if-else-statement means a encountering a branch
+            branchCheck _ (EIf _ _ _) = True
+
+            branchCheck n (ELambda _ e1) = branchCheck n e1
+            branchCheck n (ELet _ e1 e2) = branchCheck n e1 || branchCheck n e2
+            -- ELift is always false, because lifting functions is not allowed
+            branchCheck _ (ELift) = False
+            branchCheck _ (EOp0 _) = False
+            branchCheck n (EOp1 _ e1) = branchCheck n e1
+            branchCheck n (EOp2 _ e1 e2) = branchCheck n e1 || branchCheck n e2
+            
+            -- If our variable contains a function we need to check what it has the branching flag set to
+            branchCheck n (ERef s1) = case n ! s1 of
+                (TFunc b _) -> b
+                _           -> False
+        \end{haskell}
+
+        With our branch checking defined we still need to talk about how we actually apply that and make a trace for map that requires less information.
+        The basic idea here is that we can essentially perform vectorization of our function on the array in our trace: we rewrite the trace such that the function is ``applied'' to the whole array, rather than its individual items.
+        Now without support for this in our language, this basically amounts to syntactic sugar in our trace, however it will provide us with a much clearer trace.
+        This has been done in Listing \ref{lst:vectorize}, where we again add a map operator to our \texttt{Traced} ADT.
+        This is because we may need to use the naïve method if a function contains branching and we cannot vectorize it.
+        In Listing \ref{lst:vectorize} we still use \texttt{traceMapNaive} to actually map over our array.
+        This is because we need to get the value of the array regardless, and our function value (\texttt{TFunc}) will return traces regardless if we need them or not.
+        Then we can just take the first trace returned by the naïve map tracing, and rename all references to the first item of both the new and old arrays, to references of the whole old and new arrays respectively.
+        For this end we define a function \texttt{deepRename} at the end of Listing \ref{lst:vectorize}.
+        Like with the renaming function in Listing \ref{lst:trace_map}, the implementation of this function is not all that interesting: since all a \texttt{Trace} object is, is a list of tuples with a name that may need renaming and a \texttt{Traced} constructor referencing zero to two strings that may need renaming.
+        All \texttt{deepRename} would do is go over these items and rename any occurrences it finds.
+
+        \begin{haskell}[caption=Array mapping with trace vectorization, label=lst:vectorize, gobble=12]
+            data Traced
+                = $\ldots$
+                -- We leave the naive TMap untouched
+                | TMap  [Trace] String
+                -- And add a new one for vectorized traces
+                | TMapV Trace   String
+
+            trace :: TEnvironment -> Expression -> (TValue, Trace)
+            trace n (ELambda s1 e1) =
+                -- We add branch checking when we handle abstraction
+                let b = branchCheck e1
+                    f = TFunc b ($\backslash$x -> trace (insert s x) e1)
+                in  (f, [])
+
+            trace n (EOp2 op e1 e2) =
+                let (v1, t1) = trace n e1
+                    (v2, t2) = trace n e2
+                    s = getName
+                in  case (op, v1, v2) of
+                    $\ldots$
+                    (Map, TFunc b f, TArray sa va) ->
+                        -- We first get the result array (and all the traces) using the naive method
+                        let (vs, ts) = traceMapNaive f sa s va 0
+                        in  if   b
+                            -- If the function contains branching, use the naive method
+                            then (vs, [(s, TMap ts sa)])
+                            -- Otherwise use the new method
+                            else let t = vectorizeTrace sa s (head ts)
+                                 in  (vs, [(s, TMapV s sa)])
+
+            vectorizeTrace :: String -> String -> Trace -> Trace
+            -- Rename the references to individual items to the whole array
+            vectorizeTrace so sn t = deepRename iso so (deepRename isn sn t)
+                -- The names for the individual items in this trace
+                where iso = so ++ ``!0''
+                      isn = sn ++ ``!0''
+
+            deepRename :: String -> String -> Trace -> Trace
+        \end{haskell}
 
         What is important to take away from the shenanigans with the map operators is that, whilst our definitions and correctness assertions from Sections \ref{sec:tracing} and \ref{sec:correctness} gave us some guidance, there is ultimately no single way to trace everything.
         The most important factor here is to keep reminding ourselves of the information we wish to keep in the trace.
