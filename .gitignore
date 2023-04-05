@@ -376,3 +376,4 @@ colloquium/attended/memes/templates/
 colloquium/attended/*.pdf
 ~$*.pptx
 whiteboards/
+paper - *.pdf
