@@ -70,9 +70,9 @@ module Expression (
         in  case (op, v1) of
             (Idx i, EArray a) -> EReal $ a !! i
             (Neg,   EBool  a) -> EBool $ not a
-            (Sin,   EReal a) -> EReal $ sin a
+            (Sin,   EReal  a) -> EReal $ sin a
             (Sum,   EArray a) -> EReal $ sum a
-            _                -> error "Type mismatch in eval/EOp1"
+            _                 -> error "Type mismatch in eval/EOp1"
     eval n (EOp2    op e1 e2) =
         let v1 = eval n e1
             v2 = eval n e2

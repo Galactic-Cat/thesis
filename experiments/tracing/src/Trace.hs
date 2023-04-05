@@ -1,6 +1,6 @@
 {-# LANGUAGE InstanceSigs #-}
 -- {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
-module Trace (trace) where
+module Trace (trace, evalTrace, TValue (TArray, TReal)) where
     import qualified Data.Map.Strict as Map
     import Data.Map (Map ())
 
@@ -33,7 +33,7 @@ module Trace (trace) where
         | TMapV Trace   String                                      -- Vectorized map tracing
         deriving (Show)
 
-    data TValue 
+    data TValue
         = TArray String [Float]
         | TBool  String Bool                                        -- Since Booleans are traced away, they do not need to be named
         | TReal  String Float
@@ -59,12 +59,27 @@ module Trace (trace) where
             switch k (EArray e) = TArray k e
             switch k (EBool  e) = TBool  k e
             switch k (EReal  e) = TReal  k e
-            switch _ _          = error "Function in starting environment"
+            switch _ _          = error "Function in starting environment (1)"
 
     trace :: EEnvironment -> Bool -> Expression -> (TValue, Trace)
-    trace n k e = let (v, t, _) = trace' n' 0 k e in (v, t ++ t')   -- trace' returns the final value, the trace, and a counter element we don't need
+    trace n k e = let (v, t, _) = trace' n' 0 k e in (v, t' ++ t)   -- trace' returns the final value, the trace, and a counter element we don't need
         where n' = switchEnv n                                      -- Switch the input environment to a tracing environment
-              t' = Map.toList $ Map.map TLift n'                    -- Create a trace from lifting the input variables
+              t' = traceInputs n k                            -- Create a trace for the input variables
+
+    traceInputs :: Map String EValue -> Bool -> Trace
+    traceInputs m k = q l
+        where
+            l = Map.toList m
+            q :: [(String, EValue)] -> Trace
+            q []     = []
+            q (x:xs) = case x of
+                (s, EArray va) ->
+                    if   k
+                    then (s, TLift (TArray s va)) : q xs
+                    else traceArrayLift s 0 va ++ q xs
+                (_, EBool  _)  -> q xs
+                (s, EReal  v)  -> (s, TLift (TReal s v)) : q xs
+                _              -> error "Function in starting environment (2)"
 
     trace' :: TEnvironment -> Int -> Bool -> Expression -> (TValue, Trace, Int)
     trace' n c k (EApply e1 e2) =
@@ -111,7 +126,7 @@ module Trace (trace) where
         let (v1, t1, c1) = trace' n c k e1                          -- Trace e1 first
             s = 'r' : show c1                                       -- Create a name for later use
         in  case (op, v1) of
-            (Idx i, TArray s1 a) -> 
+            (Idx i, TArray s1 a) ->
                 let s' = s1 ++ '!' : show i
                 in  if   k
                     then (TReal s' $ a !! i, (s, TOp1 op s1) : t1, c1 + 1)  -- Keep indexing in the trace if we're also tracing arrays
@@ -123,7 +138,7 @@ module Trace (trace) where
                 then (TReal s $ sum a, (s, TOp1 Sum s1) : t1, c1 + 1)   -- Keep sum in the trace if array tracing is enabled
                 else traceArraySum c1 v1                                -- Otherwise trace array sums step by step
             _                    -> error "Type mismatch in trace'/EOp1"
-    
+
     trace' n c k (EOp2 op e1 e2) =
         let (v1, t1, c1) = trace' n c k e1                          -- Trace e1 and e2 first
             (v2, t2, c2) = trace' n c1 k e2 <:> t1                  -- Trace e2 and add e1's trace on to e2's immediately
@@ -180,18 +195,18 @@ module Trace (trace) where
     traceArraySum c (TArray _ []) =
         let s = 'r' : show c
         in  (TReal s 0, [(s, TLift (TReal s 0))], c + 1)            -- Empty arrays sum to zero
-    
+
     traceArraySum c (TArray _ [x]) =
         let s = 'r' : show c
         in  (TReal s 0, [(s, TLift (TReal s x))], c + 1)            -- Singleton arrays sum to that one value
-    
+
     traceArraySum c (TArray sa (x:y:z)) =
         let sx = sa ++ "!0"                                         -- Get the name for the first item in the array
             sy = sa ++ "!1"                                         -- Get the name for the second item in the array
             s  = 'r' : show c                                       -- Get the name for the addition of the first and second item
             (rv, rt, rc) = traceArraySum' (c + 1) (TArray sa z) 2 (TReal s $ x + y) -- Get the sum on the rest of the array
         in  (rv, (s, TOp2 Add sx sy) : rt, rc)                      -- Return the final result, the trace plus the first addition, and the right count
-    
+
     traceArraySum _ _ = error "Type mismatch in traceArraySum"      -- Catches all other patterns of TValue
 
     traceArraySum' :: Int -> TValue -> Int -> TValue -> (TValue, Trace, Int)
@@ -200,9 +215,9 @@ module Trace (trace) where
     traceArraySum' c (TArray sa (x:xs)) i (TReal sr r) =
         let sx = sa ++ '!' : show i                                  -- Get the name for x
             s  = 'r' : show c                                        -- Get the name for this addition
-            (rv, rt, rc) = traceArraySum' (c + 1) (TArray s xs) (i + 1) (TReal s $ r + x) -- Trace the rest of the addition
+            (rv, rt, rc) = traceArraySum' (c + 1) (TArray sa xs) (i + 1) (TReal s $ r + x) -- Trace the rest of the addition
         in  (rv, (s, TOp2 Add sr sx) : rt, rc)                       -- Add this addition to the trace on the return pass
-    
+
     traceArraySum' _ _                  _ _            = error "Type mismatch in traceArraySum'" -- Catch all other patterns of TValue
 
     -- traceArrayMap takes: the function, the current trace counter, the name of the old array, the name of the new array, the contents of the old array, and the current index
@@ -239,7 +254,7 @@ module Trace (trace) where
 
     rename :: String -> String -> Trace -> Trace
     rename _  _  []          = []
-    rename so sn ((s, x):xs) = 
+    rename so sn ((s, x):xs) =
         if   s == so
         then (sn, x) : xs
         else (s,  x) : rename so sn xs
@@ -247,7 +262,7 @@ module Trace (trace) where
     deepRename :: String -> String -> Trace -> Trace
     deepRename _ _ [] = []
     deepRename so sn ((s, x):xs) = (s', x') : deepRename so sn xs
-        where 
+        where
             s' = if s == so then sn else s
             x' = case x of
                 TOp1  op sx    -> if sx == so then TOp1 op sn else x
@@ -255,3 +270,81 @@ module Trace (trace) where
                 TMap  ts sx    -> if sx == so then TMap ts sn else x
                 TMapV t  sx    -> if sx == so then TMapV t sn else x
                 _              -> x
+
+    evalTrace :: Trace -> String -> TValue
+    evalTrace = evalTrace' Map.empty
+
+    evalTrace' :: TEnvironment -> Trace -> String -> TValue
+    evalTrace' n []              s = n Map.! s
+    evalTrace' n t@((s', t'):ts) s =
+        case t' of
+            TLift v       -> evalTrace' (Map.insert s' v n) ts s
+            TOp0 (Iota i) -> evalTrace' (Map.insert s' (TArray s' [0.0 .. (fromIntegral i - 1)]) n) ts s
+            TOp1 op s1    -> 
+                case Map.lookup s1 n of
+                    Just v  -> evalTrace' (Map.insert s' (resolveOp1 op v s') n) ts s
+                    Nothing -> evalTrace' n (reorderTrace t s1) s
+            TOp2 op s1 s2 ->
+                case Map.lookup s1 n of
+                    Just v1 -> case Map.lookup s2 n of
+                        Just v2 -> evalTrace' (Map.insert s' (resolveOp2 op v1 v2 s') n) ts s
+                        Nothing -> evalTrace' n (reorderTrace t s2) s
+                    Nothing -> evalTrace' n (reorderTrace t s1) s
+            TMap rss s1 ->
+                case Map.lookup s1 n of
+                    Just (TArray _ v1) -> evalTrace' (Map.insert s' (TArray s' $ m rss v1 (0 :: Int)) n) ts s
+                        where
+                            m []     _      _ = []
+                            m _      []     _ = []
+                            m (r:rs) (v:vs) i = unliftFloat (evalTrace' (Map.insert soi (TReal soi v) n) r sni) : m rs vs (i + 1)
+                                where
+                                    soi = s1 ++ '!' : show i
+                                    sni = s' ++ '!' : show i
+                    Just _             -> error "Type mismatch in evalTrace'/TMap"
+                    Nothing            -> evalTrace' n (reorderTrace t s1) s
+            TMapV r s1 ->
+                case Map.lookup s1 n of
+                    Just (TArray _ v1) -> evalTrace' (Map.insert s' (TArray s' $ m v1) n) ts s
+                        where
+                            m [] = []
+                            m (v:vs) = unliftFloat (evalTrace' (Map.insert s1 (TReal s1 v) n) r s') : m vs
+                    Just _             -> error "Type mismatch in evalTrace'/TMapV"
+                    Nothing            -> evalTrace' n (reorderTrace t s1) s
+
+    reorderTrace :: Trace -> String -> Trace
+    reorderTrace []            s' = error $ "Cannot reorder empty trace in reorderTrace; tried to get:" ++ s'
+    reorderTrace (t@(s, _):ts) s'
+        | s == s'   = t:ts
+        | otherwise =
+            case reorderTrace ts s' of
+                []       -> t : ts
+                [t']     -> [t', t]
+                (t':ts') -> t' : t : ts'
+
+    resolveOp1 :: Op1 -> TValue -> String -> TValue
+    resolveOp1 op v1 s = case (op, v1) of
+        (Idx i, TArray _ a) -> TReal s (a !! i)
+        (Neg,   TBool  _ a) -> TBool s (not a)
+        (Sin,   TReal  _ a) -> TReal s (sin a)
+        (Sum,   TArray _ a) -> TReal s (sum a)
+        _                   -> error "Type mismatch in resolveOp1"
+
+    resolveOp2 :: Op2 -> TValue -> TValue -> String -> TValue
+    resolveOp2 op v1 v2 s = case (op, v1, v2) of
+        (Add, TReal _ a, TReal  _ b) -> TReal s (a +  b)
+        (Equ, TBool _ a, TBool  _ b) -> TBool s (a == b)
+        (Equ, TReal _ a, TReal  _ b) -> TBool s (a == b)
+        (Gt,  TReal _ a, TReal  _ b) -> TBool s (a >  b)
+        (Gte, TReal _ a, TReal  _ b) -> TBool s (a >= b)
+        (Lt,  TReal _ a, TReal  _ b) -> TBool s (a <  b)
+        (Lte, TReal _ a, TReal  _ b) -> TBool s (a <= b)
+        (Map, TFunc _ f, TArray _ b) -> TArray s $ map ((\(v, _, _) -> unliftFloat v) . (`f` 0) . TReal "") b
+        (Mul, TReal _ a, TReal  _ b) -> TReal s (a *  b)
+        (Neq, TBool _ a, TBool  _ b) -> TBool s (a /= b)
+        (Neq, TReal _ a, TReal  _ b) -> TBool s (a /= b)
+        (Sub, TReal _ a, TReal  _ b) -> TReal s (a -  b)
+        _                            -> error "Type mismatch in resolveOp2"
+
+    unliftFloat :: TValue -> Float
+    unliftFloat (TReal _ v) = v
+    unliftFloat _           = error "Type mismatch in resolveOp2/Map/unliftFloat"
