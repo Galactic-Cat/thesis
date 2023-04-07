@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       Expression
+      Reverse
       Trace
   other-modules:
       Paths_tracing

@@ -1,6 +1,18 @@
 {-# LANGUAGE InstanceSigs #-}
 -- {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
-module Trace (trace, evalTrace, TValue (TArray, TReal)) where
+module Trace (
+    evalTrace,
+    evalTrace',
+    reorderTrace,
+    resolveOp1,
+    resolveOp2,
+    trace,
+    TEnvironment,
+    Trace,
+    Traced (TLift, TOp0, TOp1, TOp2, TMap, TMapV),
+    TValue (TArray, TBool, TReal),
+    unliftFloat
+) where
     import qualified Data.Map.Strict as Map
     import Data.Map (Map ())
 

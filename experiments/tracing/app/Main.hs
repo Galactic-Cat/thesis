@@ -8,6 +8,7 @@ module Main (main) where
         EEnvironment,
         eval)
     import Trace (trace, evalTrace, TValue (TReal, TArray))
+    import Reverse (augment)
     import qualified Data.Map.Strict as Map
 
     input :: EEnvironment
@@ -37,9 +38,12 @@ module Main (main) where
         TArray s _ -> evalTrace tt s
         _          -> error "nop"
 
+    ta = augment Map.empty tt
+
     main :: IO ()
     main = do
-        print result
-        print tv
+        -- print result
+        -- print tv
         print tt
-        print te
+        -- print te
+        print ta
