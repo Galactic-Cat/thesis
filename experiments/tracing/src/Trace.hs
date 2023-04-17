@@ -6,11 +6,13 @@ module Trace (
     reorderTrace,
     resolveOp1,
     resolveOp2,
+    switchEnv,
     trace,
     TEnvironment,
     Trace,
     Traced (TLift, TOp0, TOp1, TOp2, TMap, TMapV),
     TValue (TArray, TBool, TReal),
+    unliftArray,
     unliftFloat
 ) where
     import qualified Data.Map.Strict as Map
@@ -357,6 +359,10 @@ module Trace (
         (Sub, TReal _ a, TReal  _ b) -> TReal s (a -  b)
         _                            -> error "Type mismatch in resolveOp2"
 
+    unliftArray :: TValue -> [Float]
+    unliftArray (TArray _ v) = v
+    unliftArray _            = error "Type mismatch in unliftArray"
+    
     unliftFloat :: TValue -> Float
     unliftFloat (TReal _ v) = v
-    unliftFloat _           = error "Type mismatch in resolveOp2/Map/unliftFloat"
+    unliftFloat _           = error "Type mismatch in unliftFloat"
