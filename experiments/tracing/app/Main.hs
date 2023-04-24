@@ -8,8 +8,10 @@ module Main (main) where
         EEnvironment,
         eval)
     import Trace (trace, evalTrace, TValue (TReal, TArray))
-    import Reverse (augment)
+    import Forward (forward)
+    import Reverse (reverse)
     import qualified Data.Map.Strict as Map
+    import Prelude hiding (reverse)
 
     input :: EEnvironment
     input = Map.fromList [("x", EReal 2), ("y", EBool True)]
@@ -18,11 +20,11 @@ module Main (main) where
     test =
         ELet "f"
             (ELambda "z"
-                (EOp2 Mul (ERef "z") (ERef "x")))
-                -- (EIf
-                --     (ERef "y")
-                --     (EOp2 Mul (ERef "z") (ERef "x"))
-                --     (EOp2 Add (ERef "z") (ERef "x"))))
+                -- (EOp2 Mul (ERef "z") (ERef "x")))
+                (EIf
+                    (ERef "y")
+                    (EOp2 Mul (ERef "z") (ERef "x"))
+                    (EOp2 Add (ERef "z") (ERef "x"))))
             (ELet "a"
                 (EOp0 (Iota 5))
                 (ELet "b"
@@ -38,12 +40,15 @@ module Main (main) where
         TArray s _ -> evalTrace tt s
         _          -> error "nop"
 
-    ta = augment Map.empty tt
+    fw = forward tt
+    rv = case tv of
+        TReal  s _ -> reverse fw s 1.0
+        TArray s _ -> reverse fw s 1.0
 
     main :: IO ()
     main = do
         -- print result
-        -- print tv
-        print tt
+        print tv
+        print fw
         -- print te
-        print ta
+        print rv

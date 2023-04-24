@@ -1,6 +1,7 @@
 -- {-# OPTIONS_GHC -Wno-unused-imports -Wno-incomplete-patterns #-}
 
 module Forward (
+    addSuccessor,
     forward,
     Forward,
     Forwarded (FLift, FOp0, FOp1, FOp2, FMap, FMapV)
@@ -27,6 +28,7 @@ module Forward (
         | FOp2  Op2       String String
         | FMap  [Forward] String
         | FMapV Forward   String
+        deriving (Show)
 
     -- Stores an trace augmented with succesors and intermediate values
     type Forward = Map String (Forwarded, [String], TValue)
