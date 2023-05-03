@@ -1,11 +1,15 @@
-\section{Related Work}
-    \subsection{Parallel Array Programming}
-        Array algorithms in imperative programming often heavily rely on loops.
-        While there is no problem in making this efficient through multi-core parallelism, imperative parallel array code often lacks in clarity and may be hard to program or comprehend.
+\section{Background}
+    \subsection{Functional Parallel Array Programming}
+        A good starting point for functional parallel array programming was in 1992, with G. Belloch's paper on the parallel array programming language NESL \cite{blelloch1992nesl}.
+        The language was strongly-typed and had no support for side-effects, making it basically a functional language.
+        The main way to add parallelism was through the inherently data-parallel ``vectors'' the language introduces in lieu of lists.
+        These vectors could also be nested, and functions could run in nested parallel on these vectors.
+        Another major inclusion was to allow user-defined functions to be run (in parallel) on these vectors, making it possible to write more complex nested data-parallel algorithms than before.
 
-        Instead, the functional paradigm allows us to write code that is both more elegant and data-focussed than imperative code.
-
-        A great starting point for our history in functional parallel array programming, is with the 1995 paper by Aditya, Arvind, Augustsson, Maessen, and Nikhil, ``Semantics of pH: A parallel dialect of Haskell'' \cite{maessen1995semantics}.
-        As the title suggests, this paper introduces a parallel programming dialect to Haskell.
-        The authors suggest it was their attempt at bringing together the functional lazy-evaluation community of Haskell together with the ``dataflow'' community.
-        
+        The functional language Haskell, saw the introduction of task-parallelism well before its first official release, through libraries like pH \cite{maessen1995semantics}.
+        Some data-parallelism followed \cite{hill1995data, herrmann1999parallelization, ellmenreich2000application}, but this was limited to applying a function over a flat array.
+        However, in 2001 nested data-parallelism was introduced to Haskell by the NEPAL project by Chakravarty et al. \cite{chakravarty2001nepal}.
+        The paper largely focusses on reimplementing NESL as a Haskell library, but creates a much more expressive data-parallel language doing so.
+        This is because NESL was rather limited in scope, whereas Haskell was already a fully-fledged functional programming language.
+        Two important concepts come to the forefront in the NEPAL paper, namely flattening and fusion.
+        Both in NESL and in NEPAL, higher-dimensional parallel arrays are flattened to a single-dimensional array to better serve the 
