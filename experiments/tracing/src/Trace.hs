@@ -141,10 +141,9 @@ module Trace (
             s = 'r' : show c1                                       -- Create a name for later use
         in  case (op, v1) of
             (Idx i, TArray s1 a) ->
-                let s' = s1 ++ '!' : show i
-                in  if   k
-                    then (TReal s' $ a !! i, (s, TOp1 op s1) : t1, c1 + 1)  -- Keep indexing in the trace if we're also tracing arrays
-                    else (TReal s' $ a !! i, t1, c1)                        -- Otherwise indexing is just variable reference, and does not end in the array
+                if   k
+                then (TReal s $ a !! i, (s, TOp1 op s1) : t1, c1 + 1)  -- Keep indexing in the trace if we're also tracing arrays
+                else (TReal s $ a !! i, t1, c1)                        -- Otherwise indexing is just variable reference, and does not end in the array
             (Neg,   TBool  s1 a) -> (TBool s $ not a, (s, TOp1 Neg s1) : t1, c1 + 1)
             (Sin,   TReal  s1 a) -> (TReal s $ sin a, (s, TOp1 Sin s1) : t1, c1 + 1)
             (Sum,   TArray s1 a) ->
