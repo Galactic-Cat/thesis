@@ -12,4 +12,58 @@
         The paper largely focusses on reimplementing NESL as a Haskell library, but creates a much more expressive data-parallel language doing so.
         This is because NESL was rather limited in scope, whereas Haskell was already a fully-fledged functional programming language.
         Two important concepts come to the forefront in the NEPAL paper, namely flattening and fusion.
-        Both in NESL and in NEPAL, higher-dimensional parallel arrays are flattened to a single-dimensional array to better serve the 
+        Both in NESL and in NEPAL, higher-dimensional nested parallelism is ``flattened'' to a single distributed parallel operation.
+        In NESL, this meant that data-types had to be limited to tuples and the vectors it introduced, to make sure this flattening operation worked correctly.
+        Since then however, Keller and Chakravarty had showed this flattening transformation could also be applied more generally \cite{keller1999transformation,keller1998flattening,chakravarty2000more}.
+        This allowed them to apply the nested data parallelism of NESL to Haskell.
+        Furthermore, they also showed that in combination with fusion it could produce efficient code for distributed machines \cite{chakravarty2001functional}.
+        Fusion is where multiple separate parallel operations are combined into a single parallel operation, which can greatly improve performance of complicated parallel programs.
+        This is important because many operations on arrays introduce the need for intermediate arrays to be computed.
+        Doing this in parallel leads to more problems, as these implementations rely on gang parallelism, where the parallel threads remain in lockstep with each other \cite{feitelson1996packing}.
+        Fusion helps us here, as we can reduce the number of intermediate arrays to be generated, as we can calculate the results of multiple operations at once \cite{keller1999distributed,chakravarty2007data}.
+        
+        All this work culminated in 2007's Data Parallel Haskell (DPH) \cite{peyton2008harnessing}, by Peyton et al.
+        Its main feature was the parallel array, that like NESL's vectors, were the main way of adding parallelism to a program.
+        However, these parallel arrays could now hold any type, such as other arrays or functions, like Haskell's native (non-parallel) lists.
+        Furthermore, DPH provides parallel variants of Haskell's native list functions, and a parallel alternative to Haskell's list comprehensions.
+        The main difference between Haskell's native lists and DPH's parallel arrays (besides the parallelism) was that evaluating any value in a parallel array would require evaluation on all the array's elements, whereas Haskell as a lazy language would not normally do that.
+        This is to be expected, as parallelism becomes meaningless if it is only applied to a single entry of an array.
+
+        Outside of Haskell, a functional array-programming dialect of C was developed: Single Assignment C (SAC) \cite{scholz1994single, scholz2003single, grelck2005generic}.
+        It would go on to distinguish itself as a functional array programming language in a style more familiar to programmers of imperative languages (like C).
+        The main mechanic in SAC is the with-loop, which takes a generator that dictates a looping mechanism and an operation that dictates the return value.
+        These operations can be functions like ``fold'' to reduce the rank of an array, or ``genarray'' to generate new (multidimensional) arrays.
+        Besides the imperative style, the main draw of SAC is its performance comparable to Fortran and C, while its programs are generally more concise (for intensive numerical applications.)
+
+        In 2010, Keller, Chakravarty, et al. presented a new data-parallel approach for Haskell in ``Regular, Shape-polymorphic, Parallel Arrays in Haskell'' \cite{keller2010regular}.
+        Previous approaches had focussed on irregular arrays, where on array could contain arrays of different lengths.
+        The library Repa, introduced in this paper, was made for regular arrays where arrays of each nested rank are the same size.
+        However, this allows the library to be purely functional, and allows support for shape polymorphism.
+        In shape polymorphism, the type of a collection is fixed (unlike in type polymorphism), but the shape of the collection is not \cite{jay1994shapely}.
+        For instance, under shape polymorphism a function may be applied to either a flat array, or a 10-dimensional one.
+        While shape polymorphism for functional arrays had been implemented before in SAC, Repa implemented it by embedding it into Haskell's type system, whereas the SAC implementation had required a purpose-built compiler.
+        This also allowed programmers to more easily see and control the shapes of their multidimensional parallel arrays, and build their own shape polymorphic parallel functions.
+
+        In 2011, Repa was succeeded by the Accelerate project \cite{chakravarty2011accelerating}.
+        Accelerate is a library for Haskell, aimed specifically on bringing parallel array programming to modern GPUs.
+        It mimicked many of Haskell's native list functions as parallel alternatives (run on the GPU), and used the typed shaped polymorphism from Repa.
+        It also separated ``collective'' (array) computations and scalar computation by wrapping these in Haskell monads.
+        Here, collective computations could include scalar computations, but not the other way around.
+        This meant excluding nested and irregular data parallelism, which in turn allows Accelerate to efficiently run on GPUs (which are much more constrained than CPUs).
+        
+        Another interesting example of a parallel array programming language is Remora by Slepak et al. \cite{slepak2014array}
+        The language, inspired by earlier array programming languages APL \cite{iverson1962programming} and J implements rank-polymorphism.
+        Rank polymorphism is similar to shape polymorphism, but it annotates functions and operators with a specific array rank they can operate on, and was also present in Repa and Accelerate.
+        Remember that scalars are considered rank 0 arrays, a flat array is rank 1, a matrix is rank 2, et cetera.
+        In rank polymorphism, arguments are transformed (re-ranked) such that they are the rank required for a specific function or operator.
+        Specifically, an operator defined for a certain rank, is automatically defined for any higher rank.
+        With Remora, Slepak et al. tried to shed some light on the more ``murkier corners'' of the array-computational model.
+        They do this by generalizing the array-computational model, which then allows them to both address some of the shortcomings of APL, but also allows them to extend the model to allow arrays of functions and arrays of arguments, which in turn allows for the parallel MIMD (multiple instruction, multiple data) architecture, rather than only SIMD (single instruction, multiple data) parallelism.
+
+        Finally, a more recent parallel array programming language is Dex \cite{maclaurin2019dex,paszke2021getting}.
+        Rather than avoiding loops and explicit indexing, like NESL, NEPAL, DPH, and Repa had all done, Dex suggests that these features might introduce more clarity, if only they were implemented correctly.
+        The main idea is to treat index sets as types and arrays as functions.
+        In reality this ``index comprehension'' can also be seen as functions that return arrays, and allow declaring iteration over multiple dimensions in a single line.
+        The main advantage of this is that loops make some parallelism opportunities very explicit.
+        Also when these index comprehensions are presented back-to-back, opportunities for fusion become fairly clear as well.
+        In their paper, they also show that on some benchmark problems, Dex performs similarly to Futhark \cite{henriksen2017futhark}, a functional array programming language that was specifically designed to write performant parallel GPU code.
