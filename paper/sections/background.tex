@@ -97,8 +97,59 @@
         While this initially seems to eliminate the need for taping, they find that through optimizations they return to a concept that is very close to taping and show that it is in fact equivalent.
 
     \subsection{Functional Parallel Array Programming}
-        A good starting point for functional parallel array programming was in 1992, with G. Belloch's paper on the parallel array programming language NESL \cite{blelloch1992nesl}.
-        The language was strongly-typed and had no support for side-effects, making it basically a functional language.
+        Array programming languages are programming languages that treat the array as a central data structure.
+        This generally includes that functions, both user-defined and built-in, could be applied to arrays through vectorization.
+        Vectorization involves applying a function to every element of an array at the same time.
+        For instance, vectorization of addition would add two arrays together element-wise.
+        This is shown in Equation \ref{eq:vectorization}, where $\vec{a}$ and $\vec{b}$ both are arrays of the same size.
+        \begin{equation} \label{eq:vectorization}
+            \vec{a}+\vec{b}=[a_1+b_1,\dots,a_n+b_n]\text{ iff }|\vec{a}|=|\vec{b}|
+        \end{equation}
+        In general vectorization would only work for arrays of the same size were it not for another central concept: broadcasting.
+        Broadcasting involves the resizing of arguments to functions so they can be used.
+        A very clear example would be if we wished to add a scalar value to each element in an array of scalars.
+        To do this with vectorization alone would mean we'd need another array which replicates the scalar we wish to add for each element in the array we wish to add it to.
+        Broadcasting basically does this for us, as exemplified in Equation \ref{eq:broadcasting}.
+        \begin{equation} \label{eq:broadcasting}
+            \vec{a}+2=[a_1+2,\dots,a_n+2]
+        \end{equation}
+        
+        Array programming languages also often support higher-order operators for use on arrays.
+        An important operator for arrays is fold (or reduce), which applies a binary function to elements in an array, where one argument accumulates the previous results.
+        It is easy to imagine how such an operator could be used to, for instance, sum all the items in a 1-dimensional array.
+        An important realization is that, since fold only returns the final result, fold can reduce the dimensions of an array by one.
+        In our summation example, we fold a one-dimensional array into a zero-dimensional array, namely a scalar value.
+        Similar to fold is scan, which like fold applies a cumulative binary function to each element in the array, but rather than returning only the result, it returns all intermediate results in an array (with the last element being the final result).
+
+        Other important array functions include map, which applies a function to each element in an array.
+        Then, forward permutation (scatter) and backwards permutation (gather), which permute one array into a new one by respectively mapping the indices of the source array to those of the new array or the indices of the new array to those of the source array.
+        Generate, which generates a new array as well, but does by taking the dimensions of the desired array and a function that takes in an index and outputs a value.
+
+        We should also not gloss over the actual implementation of these arrays, especially in functional languages where there exists two major ways of constructing arrays \cite{svensson2014defunctionalizing}.
+        Pull-arrays are the more used of the two, here arrays are represented with a function from an index to a value.
+        In push-arrays, consumers are provided with a method to write into memory.
+        This means that the way that the efficiency of array operations can change based on the array representation.
+        For instance, indexing is faster on pull-arrays while push-arrays are quicker to concatenate.
+        This basically divides the array operations in two camps: push-operations and pull-operations.
+        
+        These two camps play an important role in a concept of fusion.
+        When we have multiple back-to-back parallel array operations, executing them naively introduces a lot of overhead for reading and writing intermediate values to memory.
+        Instead fusion allows us to combine these operations together, so we can compute them in one go without the overhead of storing intermediates.
+        However, we cannot just go chaining parallel operations, not all parallel operations fuse together nicely.
+        In fact, pull-array operations only fuse with other pull-array operations, and the same goes for push-array operations.
+        This means for instance that we can fuse multiple scatter operations, but not a scatter and gather operation.
+
+        Now the reason for choosing a (functional) array language over a general language is often because we need to process large amounts of numerical data, and arrays are well-suited for parallelism.
+        To be precise, we are talking about data parallelism here.
+        Task parallelism is when two or more computer processes run simultaneously on different processor cores.
+        Data parallelism is when an operation (or a string of operations) is done element-wise on data structure like an array.
+        The parallelism of data parallel processing of these operations on each element, rather than the parallelism of different processes.
+        An important distinction between task and data parallelism, is that while parallel threads in task parallelism can generally start, run, and end independently of each other, data parallelism threads move in lockstep with each other.
+        This is lockstep or synchronous execution means that the execution does not continue until the current operation has been applied to all elements in the array, which may be important if we want to do multiple parallel operations back-to-back.
+        Furthermore, modern GPU architectures are especially well-suited for this type of synchronous parallelism, as graphics processing overlaps in large part with parallel array processing.
+
+        A good starting point for the history of functional parallel array programming was in 1992, with G. Belloch's paper on the parallel array programming language NESL \cite{blelloch1992nesl}.
+        The language was strongly-typed and had no support for side-effects, making it a functional language.
         The main way to add parallelism was through the inherently data-parallel ``vectors'' the language introduces in lieu of lists.
         These vectors could also be nested, and functions could run in nested parallel on these vectors.
         Another major inclusion was to allow user-defined functions to be run (in parallel) on these vectors, making it possible to write more complex nested data-parallel algorithms than before.
@@ -111,16 +162,16 @@
         Two important concepts come to the forefront in the NEPAL paper, namely flattening and fusion.
         Both in NESL and in NEPAL, higher-dimensional nested parallelism is ``flattened'' to a single distributed parallel operation.
         In NESL, this meant that data-types had to be limited to tuples and the vectors it introduced, to make sure this flattening operation worked correctly.
-        Since then however, Keller and Chakravarty had showed this flattening transformation could also be applied more generally \cite{keller1999transformation,keller1998flattening,chakravarty2000more}.
-        This allowed them to apply the nested data parallelism of NESL to Haskell.
+        Since then however, Keller and Chakravarty had shown this flattening transformation could also be applied more generally to cover the full range of types of general programming languages \cite{keller1999transformation,keller1998flattening,chakravarty2000more}.
+        This allowed them to apply the nested data parallelism of NESL to a more expressive language Haskell with NEPAL.
         Furthermore, they also showed that in combination with fusion it could produce efficient code for distributed machines \cite{chakravarty2001functional}.
-        Fusion is where multiple separate parallel operations are combined into a single parallel operation, which can greatly improve performance of complicated parallel programs.
+        Fusion is where multiple separate parallel operations are combined into a single parallel operation, which greatly improves performance of complicated parallel programs.
         This is important because many operations on arrays introduce the need for intermediate arrays to be computed.
         Doing this in parallel leads to more problems, as these implementations rely on gang parallelism, where the parallel threads remain in lockstep with each other \cite{feitelson1996packing}.
         Fusion helps us here, as we can reduce the number of intermediate arrays to be generated, as we can calculate the results of multiple operations at once \cite{keller1999distributed,chakravarty2007data}.
         
         All this work culminated in 2007's Data Parallel Haskell (DPH) \cite{peyton2008harnessing}, by Peyton et al.
-        Its main feature was the parallel array, that like NESL's vectors, were the main way of adding parallelism to a program.
+        Its main feature was the parallel array, that like NESL's vectors, was the main way of adding parallelism to a program.
         However, these parallel arrays could now hold any type, such as other arrays or functions, like Haskell's native (non-parallel) lists.
         Furthermore, DPH provides parallel variants of Haskell's native list functions, and a parallel alternative to Haskell's list comprehensions.
         The main difference between Haskell's native lists and DPH's parallel arrays (besides the parallelism) was that evaluating any value in a parallel array would require evaluation on all the array's elements, whereas Haskell as a lazy language would not normally do that.
@@ -130,37 +181,47 @@
         It would go on to distinguish itself as a functional array programming language in a style more familiar to programmers of imperative languages (like C).
         The main mechanic in SAC is the with-loop, which takes a generator that dictates a looping mechanism and an operation that dictates the return value.
         These operations can be functions like ``fold'' to reduce the rank of an array, or ``genarray'' to generate new (multidimensional) arrays.
-        Besides the imperative style, the main draw of SAC is its performance comparable to Fortran and C, while its programs are generally more concise (for intensive numerical applications.)
+        Besides the imperative style, the main draw of SAC is that its performance is comparable to Fortran and C, while its programs are generally more concise (for intensive numerical applications.)
 
-        In 2010, Keller, Chakravarty, et al. presented a new data-parallel approach for Haskell in ``Regular, Shape-polymorphic, Parallel Arrays in Haskell'' \cite{keller2010regular}.
+        In 2010, Keller, Chakravarty, et al. presented a new data-parallelism approach for Haskell in ``Regular, Shape-polymorphic, Parallel Arrays in Haskell'' \cite{keller2010regular}.
         Previous approaches had focussed on irregular arrays, where on array could contain arrays of different lengths.
         The library Repa, introduced in this paper, was made for regular arrays where arrays of each nested rank are the same size.
-        However, this allows the library to be purely functional, and allows support for shape polymorphism.
+        However, this allows the library to be purely functional and support shape polymorphism.
+        While DPH was purely functional as well, it wasn't especially performant on regular arrays and it also did not support shape polymorphism.
         In shape polymorphism, the type of a collection is fixed (unlike in type polymorphism), but the shape of the collection is not \cite{jay1994shapely}.
         For instance, under shape polymorphism a function may be applied to either a flat array, or a 10-dimensional one.
         While shape polymorphism for functional arrays had been implemented before in SAC, Repa implemented it by embedding it into Haskell's type system, whereas the SAC implementation had required a purpose-built compiler.
         This also allowed programmers to more easily see and control the shapes of their multidimensional parallel arrays, and build their own shape polymorphic parallel functions.
 
         In 2011, Repa was succeeded by the Accelerate project \cite{chakravarty2011accelerating}.
-        Accelerate is a library for Haskell, aimed specifically on bringing parallel array programming to modern GPUs.
-        It mimicked many of Haskell's native list functions as parallel alternatives (run on the GPU), and used the typed shaped polymorphism from Repa.
+        Accelerate is a library for Haskell, aimed specifically at bringing parallel array programming to modern GPUs.
+        It mimicked many of Haskell's native list functions with parallel alternatives (that run on the GPU), and used the typed shaped polymorphism from Repa.
         It also separated ``collective'' (array) computations and scalar computation by wrapping these in Haskell monads.
         Here, collective computations could include scalar computations, but not the other way around.
         This meant excluding nested and irregular data parallelism, which in turn allows Accelerate to efficiently run on GPUs (which are much more constrained than CPUs).
+        It also meant that these arrays could only contain scalars, no functions or other types.
         
         Another interesting example of a parallel array programming language is Remora by Slepak et al. \cite{slepak2014array}
         The language, inspired by earlier array programming languages APL \cite{iverson1962programming} and J implements rank-polymorphism.
-        Rank polymorphism is similar to shape polymorphism, but it annotates functions and operators with a specific array rank they can operate on, and was also present in Repa and Accelerate.
+        Rank polymorphism is similar to shape polymorphism, but it annotates functions and operators with an array rank they can operate on, and was also present in Repa and Accelerate.
         Remember that scalars are considered rank 0 arrays, a flat array is rank 1, a matrix is rank 2, et cetera.
         In rank polymorphism, arguments are transformed (re-ranked) such that they are the rank required for a specific function or operator.
-        Specifically, an operator defined for a certain rank, is automatically defined for any higher rank.
+        Specifically, an operator defined for a certain rank, is automatically defined for any higher rank, because it can be mapped over these higher dimensions.
+        This is subtly different from the more general shape-polymorphism, as rank only refers to the number of dimensions, while shape also contains information on the size of these dimensions.
         With Remora, Slepak et al. tried to shed some light on the more ``murkier corners'' of the array-computational model.
         They do this by generalizing the array-computational model, which then allows them to both address some of the shortcomings of APL, but also allows them to extend the model to allow arrays of functions and arrays of arguments, which in turn allows for the parallel MIMD (multiple instruction, multiple data) architecture, rather than only SIMD (single instruction, multiple data) parallelism.
+
+        In 2017, we got one of the major current functional data-parallel array languages in Futhark \cite{henriksen2017futhark}.
+        Futhark's design focusses on efficient nested data-parallelism.
+        They do this by using both ``aggressive'' fusion (fusing as much as possible), followed by flattening (like we saw in NESL).
+        Finally through some more optimizations, Futhark produces very performant programs.
+        To facilitate this performance however, they do not support higher-order programming, as Futhark only supports up to second-order.
 
         Finally, a more recent parallel array programming language is Dex \cite{maclaurin2019dex,paszke2021getting}.
         Rather than avoiding loops and explicit indexing, like NESL, NEPAL, DPH, and Repa had all done, Dex suggests that these features might introduce more clarity, if only they were implemented correctly.
         The main idea is to treat index sets as types and arrays as functions.
         In reality this ``index comprehension'' can also be seen as functions that return arrays, and allow declaring iteration over multiple dimensions in a single line.
-        The main advantage of this is that loops make some parallelism opportunities very explicit.
+        Of course, this is the same idea as pull-arrays, a representation also used by Accelerate under the hood.
+        However, the main novelty of Dex is that they use this to make explicit loops, which in turn makes some parallelism opportunities also explicit.
         Also when these index comprehensions are presented back-to-back, opportunities for fusion become fairly clear as well.
-        In their paper, they also show that on some benchmark problems, Dex performs similarly to Futhark \cite{henriksen2017futhark}, a functional array programming language that was specifically designed to write performant parallel GPU code.
+        In their paper, they also show that on some benchmark problems, Dex performs similarly to Futhark, as a functional array programming language that was specifically designed to write performant parallel GPU code.
