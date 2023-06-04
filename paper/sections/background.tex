@@ -22,12 +22,12 @@
         By knowing which input variable we wish to differentiate, we can compute every step of the derivative as our inputs are used by the program.
         Rall demonstrates this using a method known as dual-numbers, where each real number is represented by a pair of numbers, similar to complex numbers.
         In dual-numbers, the first number in the pair represents the primal part of the number, whereas the second number represents the derivative part (called the tangent in forward-mode).
-        When we modify these numbers through arithmetic operations, we can operate on the primal parts as normal, and use derivative rules to calculate the derivative of the result using the tangent parts.
+        When we compute with these numbers through arithmetic operations, we can operate on the primal parts as normal, and use derivative rules to calculate the derivative of the result using the tangent parts.
         An example of this is given in Equation \ref{eq:dualnumbers}, where $\dot{a}$ is the tangent part of some real number $a$.
         \begin{equation} \label{eq:dualnumbers}
             (a,\dot{a})\cdot(b,\dot{b})=(a\cdot b, \dot{a}\cdot b+\dot{b}\cdot a)
         \end{equation}
-        Now we can find the derivative of some input $x_i$ by setting $\dot{x_i}$ to $1$, setting the tangents of all other inputs to $0$, and just running through the program calculating tangents as we go.
+        Now we can find the derivative of some program with regards to the input $x_i$ by setting $\dot{x_i}$ to $1$, setting the tangents of all other inputs to $0$, and just running through the program calculating tangents as we go.
         The tangent part of the output value(s) is also the calculated derivative of the whole program.
 
         While forward-mode AD is fairly straightforward, it comes with some drawbacks.
@@ -43,11 +43,11 @@
         This then requires a forward pass, to find this structure, and often to setup any dual-numbers or other implementation details.
         And while reverse-mode is definitely harder to implement, it also provides us with a way to calculate the sensitivity of all inputs to an output, which is much more efficient for functions with many more inputs than outputs (which can be quite common in certain fields like neural networks).
 
-        In mathematical terms, calculating the partial derivative of one input with regards to one output, means calculating one cell in the Jacobian, the matrix of all partial derivatives.
+        In mathematical terms, calculating the partial derivative of one output with regards to one input, means calculating one cell in the Jacobian, the matrix of all partial derivatives.
         For a function $f:\mathbb{R}^n\to\mathbb{R}^m$ with $n$ inputs and $m$ outputs, the Jacobian would be a $n\times m$ matrix.
-        Here a column $i$ represents the derivatives of $\frac{\partial\vec{f}}{\partial x_i}$, where $\vec{f}$ are all outputs of $f$, and $x_i$ represents a single input.
-        A row $j$ then represents the derivatives of $\nabla f_j=\frac{\partial f_j}{\partial\vec{x}}$, where $\vec{x}$ are all inputs of $f$, and $\nabla f_j$ is also known as the gradient of $f_j$.
-        This is also shown in Equation \ref{eq:jacobian}, showing the Jacobian for some function $f$ with $n$ inputs ($x_1,\dots,x_n$) and 
+        Here a column $i$ represents the partial derivatives $\frac{\partial\vec{f}}{\partial x_i}$, where $\vec{f}$ are all outputs of $f$, and $x_i$ represents a single input.
+        A row $j$ then represents the derivatives $\nabla f_j=\frac{\partial f_j}{\partial\vec{x}}$, where $\vec{x}$ are all inputs of $f$, and $\nabla f_j$ is also known as the gradient of $f_j$.
+        This is also shown in Equation \ref{eq:jacobian}, showing the Jacobian for some function $f$ with $n$ inputs ($x_1,\dots,x_n$) and $m$ inputs ($f_1,\dots,f_m$).
         An important take-away here is that forward-mode computes the derivatives of all outputs with regards to a single input, so a column in the Jacobian, and reverse-mode computes the derivatives of all inputs with regards to a single output, so a row in the Jacobian.
         Again, forward-mode is more efficient when we have more outputs than inputs or when the Jacobian has more columns than rows, and the reverse-mode is more efficient for functions with more inputs than outputs or for Jacobians with more rows than columns.
 
@@ -60,24 +60,52 @@
         \end{equation}
 
         While it was previously shown that reverse-mode automatic differentiation could be executed in time equal to some constant multiple of the execution time of the primal program \cite{linnainmaa1976taylor}, it seemed that a constant multiple of the execution memory was also needed, which could become very expensive for large programs.
-        However, in 1992, Andreas Griewank showed that by using a method called taping we could reduce the time and space complexity to a constant multiple of the log of the execution time \cite{griewank1992achieving}.
+        However, in 1992, Andreas Griewank showed that by using taping and checkpointing we could reduce the time and space complexity to a constant multiple of the log of the execution time \cite{griewank1992achieving}.
         In general the practice of taping refers to a form of tracing on the program we wish to differentiate, where we execute the program as normal and record all the steps and intermediate values in a first-in-last-out data structure referred to as a "tape" or Wengert list.
         In a second phase to the reverse-mode algorithm, the tape is then used to calculate the derivatives in question, which due to the first-in-last-out nature of the tape, is in the precise reverse of the execution order of the program.
-        It should be noted that an input agnostic form of reverse-mode AD is also possible, where the primal program is transformed into a program that computes its derivative for any input, for which taping would only refer to storing the operations without any intermediate values.
-        This is referred to as source transformation \cite{bischof2000computing}.
         An important advantage of taping is that by giving each variable and intermediate calculation a unique id we can avoid redundant execution, because we can just refer to the intermediate value or tangent/adjoint stored in the tape.
+        While taping is efficient time-wise, it clearly adds a memory overhead that can be quite sizable for large programs.
+        Checkpointing aims to address this overhead by storing parts of the tape on disk, basically cutting the calculation of the derivatives in multiple steps.
+        It should be noted that an input agnostic form of reverse-mode AD is also possible, where the primal program is transformed into a program that computes its derivative for any input, for which taping would only refer to storing the operations without any intermediate values.
+        This is referred to as source transformation \cite{bischof2000computing}, and in its most basic form can be implemented as just interlacing the derivative calculations into the regular program.
+        An example of this is provided in Listing \ref{lst:transformation_fw}, where we calculate the derivative of some variable y (as dy) with regards to the variable x1.
+        For reverse-mode AD this kind of interlacing is not possible, as we need to reach the end of the program before we can start the reverse pass, which is exactly why we record our steps on the tape: so we can reverse over the tape and know how to produce our reverse AD program.
+        An example of this is provided in Listing \ref{lst:transformation_rv}, where we again calculate the derivative of y (as dy), with regards to x1 and x2.
+
+        \begin{quicklst}[caption={An example of input-agnostic forward mode AD by source transformation, with the AD statements in red}, label=lst:transformation_fw, gobble=12]
+             x1 = 15
+            @rdx1 = 1@
+             x2 = 7
+            @rdx2 = 0@
+             r1 = x1 + x2
+            @rdr1 = dx1 + dx2@
+             y  = r1 $\times$ x2
+            @rdy  = r1 $\color{red}\times$ dx2 + dr1 $\color{red}\times$ x2@
+        \end{quicklst}
+
+        \begin{quicklst}[caption={An example of input-agnostic reverse mode AD by source transformation, with the AD statements in red}, label=lst:transformation_rv, gobble=12]
+             x1 = 15
+             x2 = 7
+             r1 = x1 + x2
+             y  = r1 $\times$ x2
+
+            @rdy  = 1@
+            @rdr1 = rdy $\color{red}\times$ x2@
+            @rdx2 = rdy $\color{red}\times$ r1 + rd1 $\color{red}\times$ 1@
+            @rdx1 = rd1 $\color{red}\times$ 1@
+        \end{quicklst}
         
         For forward-mode AD, the evaluation of the derivative is done during execution. Like in 1996's FADBAD package, which provided both forward-mode and reverse-mode AD for C++ \cite{bendtsen1996fadbad}.
         The reverse-mode uses the taping method described by Griewank, implemented through a method called operator overloading.
-        In forward-mode, operator overloading refers to providing the basic mathematical operators with methods that work on the numbers represented by a pair (of a primal part and a tangent part).
+        In forward-mode, operator overloading refers to providing the basic mathematical operators with methods that work on the numbers represented by a pair (of a primal part and a tangent part); this is the dual-numbers approach we mentioned before.
         For reverse-mode, operator overloading is used to rewrite the basic mathematical operators, so they record their use and intermediate values to a single tape data structure.
         A similar implementation was also provided by Griewank et al. in the 1996 package ADOL-C \cite{griewank1996algorithm}, again in 2001 using more efficient expression templates by Aubert et al. \cite{aubert2001automatic}, and later in 2014 by Robin Hogan \cite{hogan2014fast}.
 
         Source-code transformation is eventually also implemented, in the Tapenade AD program \cite{hascoet2013tapenade}.
         Tapenade adds derivative calculations to the code, but also employs lazy/delayed evaluation in the forward pass.
         This allows Tapenade to do some activity analysis, which in turn allows it to combine or discard some partial derivatives to be more efficient.
-        It also implements a method called checkpointing, where part of the tape is stored to be restored and differentiated later.
-        This, in theory, allows for differentiating programs of arbitrary size \cite{griewank2008evaluating}.
+        It also implements the previously discussed checkpointing, where part of the tape is stored to be restored and differentiated later.
+        This, in theory, allows for differentiating programs of arbitrary size, because the differentiation process is not limited by the size of the working memory \cite{griewank2008evaluating}.
 
         More recently implementations, like Fei Wang et al. 2019 paper, have shown how to simplify reverse automatic differentiation using continuation passing style and delimited continuation \cite{wang2019demystifying}.
         This method uses dual numbers and cleverly overloads operators so they call the forward pass as a continuation and then perform the backwards pass on the returned value.
@@ -86,7 +114,7 @@
         In 2022, Krawiec et al. show how reverse-mode AD can be extended efficiently to higher-order functional programs \cite{krawiec2022provably}.
         While the Wang paper also did this, Krawiec uses the functional nature to provide a correctness proof of the reverse-mode AD, something that had previously only been done on implementations that were either asymptotically inefficient or only worked on first-order languages.
         They do however need taping again to make it provable and efficient.\\
-        Vákár and Smeding provide a provably correct form of efficient higher-order reverse AD without taping in their 2022 paper \cite{vakar2022chad}, based on earlier work by Elliott in 2018 \cite{elliott2018simple}.
+        Vákár and Smeding provide a provably correct form of higher-order reverse AD without taping in their 2022 paper \cite{vakar2022chad}, based on earlier work by Elliott in 2018 \cite{elliott2018simple}.
 
         And in 2022 as well, Schenck et al. show how to do both forward-mode and reverse-mode automatic differentiation on second-order array language with nested data parallelism \cite{schenck2022ad}.
         They do this by eliminating taping again, which forces sequential execution, by allowing potential redundant execution.
@@ -96,7 +124,66 @@
         However, instead of pairing each number with its computed adjoint, they instead pair it with a linear backpropagator function, which they can then later chain to get the full derivative.
         While this initially seems to eliminate the need for taping, they find that through optimizations they return to a concept that is very close to taping and show that it is in fact equivalent.
 
-    \subsection{Functional Parallel Array Programming}
+    \subsection{Tracing}
+        Tracing is a concept in computer science that is often left without proper definition.
+        While the main ideas behind tracing are well known, they are generally assumed known by the reader and therefor left without explanation.
+        This is also in part because, in software engineering, the term tracing also refers to finding the origin of some call (``tracing'' the call stack), which is tangentially related to the tracing we are interested in, but can leave definitions of tracing a bit muddled.
+        This is why, in Section \ref{sec:tracing}, we will discuss more about that proper definition.
+        For now, it is important to know that, when we refer to tracing in this paper, we speak about tracing the path of computation through a program, given some (valid) input to said program.
+        In other terms, given a program and an input, we walk through the program and record each computational step for some later purpose.
+        This recording can happen with some domain-specific pseudo-language, or in full fledged code if we wish to revaluate the trace later on (or a combination of the two).
+
+        Doing tracing gives us some interesting insights into a program we trace.
+        First, it effectively ignores control flow.
+        This is fairly intuitive, when given a set of inputs to a program, the control flow will control what path the program uses, and since we only record computations we find what is often dubbed a ``straight-line program'' for some inputs.
+        This can be useful for instance in Automatic Differentiation, where we often only want to differentiate a computation, not the entire program including unused branches.
+        This will also be the use of tracing in this paper, as laid out in Section \ref{sec:ad}.
+
+        Tracing also often allows us to simplify the program in more ways that removing control flow.
+        This is through type selection, where we only select a subset of the original types present in the original program to be used in the trace.
+        For composite types, types constructed of other types, and collections, this is somewhat obvious: we can rewrite a pair of two values, into two different variables, which removes the pair from our type system in the trace.
+        The same can also be done for arrays, something that will prove useful for the tracing and differentiation of functional parallel array programming, described in Sections \ref{sec:bg_array} and \ref{sec:tracing}.
+        For some instances it also allows us to remove non-composite types from the type system in the trace.
+        For instance, as we remove control flow, we might want to ignore Boolean values altogether, especially if our input and output do not include any Boolean values.
+        This is highly dependent on which information we wish to see in our trace exactly, but if Boolean values are never actually used, they may as well be ignored.
+        In this case, we can ``trace away'' the types we wish to ignore by omitting any values of this type or any computational steps that produce this type.
+        However, it should be noted that this is not always possible, for instance if a type $\tau$ that we wish to trace away is used to construct a type $\sigma$ we wish to keep; tracing away the type $\tau$ would also mean tracing away the construction of the type $\sigma$ leaving us with an incomplete trace.
+        Of course, perhaps we can rewrite the production of the type $\sigma$ from $\tau$ in our trace, so we do not need $\tau$, however this would need to be done on a case-to-case basis for different methods $\tau\to\sigma$.
+        Regardless, tracing away types or keeping them, allows us control over what information we keep in the trace, and what information we choose to ignore.
+
+        As mentioned, in literature we see this type of tracing used for automatic differentiation.
+        One of these uses was by Bischof in 1991 \cite{bischof1991issues}.
+        In his paper, Bischof discusses the use of the computational graph of a program in automatic differentiation (using ADOL-C \cite{griewank1996algorithm}).
+        The computational graph of a program is an directed acyclic graph, where each node contains a computational step in the program, and edges connect these steps in the execution order of the program.
+        Bischof creates this graph from the tape produced by ADOL-C, which makes sense: for automatic differentiation as discussed, the tape acts as a sort of trace, recording the steps that are important in the automatic differentiation.
+        Bischof then uses a graph colouring algorithm on the computational graph to highlight ``component functions'' that may be differentiated concurrently, as to improve the running time of the algorithm.
+        In 2008, Bischof et al. expand on this by extending the tracing automatic differentiation to loops \cite{bischof2008parallel}.
+        They do this by extending ADOL-C, paying specific attention the parallelization opportunities present in automatic differentiation.
+
+        In a similar vein, Dougal Maclaurin presented in his PhD thesis in 2016 \cite{maclaurin2016modeling} a paper introducing Autograd.
+        A software package to automatically differentiate Python code (including AD for the vector library Numpy).
+        As Python is an expressive JIT-compiled (Just In Time) dynamic language, they opt for tracing to construct the computing graph on the fly when a function is called, and like Bischof's work this allows them to do the backwards pass off reverse-mode AD on the computational graph.
+        They do this by wrapping their variables as "nodes" in the computational graph.
+        When a variable is used, it is first unwrapped for use, and then the result of whatever operation used the variable, is stored as a new variable and wrapped as well.
+        The original variable and the produced variable are then linked such that the produced variable stores a reference to the original variable.
+        This creates the reverse computational graph, which is exactly what is needed for the reverse AD pass.
+
+        TensorFlow, a machine learning library, also uses tracing to create computational graphs \cite{abadi2016tensorflow}.
+        This kind of tracing is not as low to the ground as actually following individual computations.
+        Since TensorFlow mainly focusses on building artificial neural networks, the computational graph is made explicit by the programmer.
+        While there are some nuance differences between a computational graph of a neural network and the neural network itself, these differences are somewhat unimportant.
+        More interestingly, TensorFlow allows for the partial execution of the computational graph.
+        While Bischof's use of a graph colouring algorithm already suggested this, TensorFlow actively uses this technique to re-run partial computational graphs, which works well for the explicit nature of neural networks, as the computational graph stays unchanged even if the inputs change (as neural networks do not have internal control flow).
+
+        Finally, 2018's JAX uses tracing to enhance performance of general machine learning code \cite{frostig2018compiling}.
+        The programmer annotates functions to be analysed by JAX, which then traces as optimizes them.
+        Rather than finding the computational graph (or predefining it), JAX waits for Python to execute the function and actually traces it.
+        Then, JAX optimizes it, mainly through a process called fusion, which is discussed in Section \ref{sec:bg_array}.
+        This is also where JAX gets its name: Just After eXecution, as it waits for Python to execute the function first.
+        It should be noted that JAX can only do this for functions which are pure-and-statically-composed (PSC), meaning functions that have no side-effects and that do not change with different inputs.
+        Again, machine learning code is especially suited for this, as it often already satisfies this PSC assumption.
+        
+    \subsection{Functional Parallel Array Programming} \label{sec:bg_array}
         Array programming languages are programming languages that treat the array as a central data structure.
         This generally includes that functions, both user-defined and built-in, could be applied to arrays through vectorization.
         Vectorization involves applying a function to every element of an array at the same time.
@@ -170,7 +257,7 @@
         Doing this in parallel leads to more problems, as these implementations rely on gang parallelism, where the parallel threads remain in lockstep with each other \cite{feitelson1996packing}.
         Fusion helps us here, as we can reduce the number of intermediate arrays to be generated, as we can calculate the results of multiple operations at once \cite{keller1999distributed,chakravarty2007data}.
         
-        All this work culminated in 2007's Data Parallel Haskell (DPH) \cite{peyton2008harnessing}, by Peyton et al.
+        All this work culminated in 2007's Data Parallel Haskell (DPH) \cite{peyton2008harnessing}, by Peyton-Jones et al.
         Its main feature was the parallel array, that like NESL's vectors, was the main way of adding parallelism to a program.
         However, these parallel arrays could now hold any type, such as other arrays or functions, like Haskell's native (non-parallel) lists.
         Furthermore, DPH provides parallel variants of Haskell's native list functions, and a parallel alternative to Haskell's list comprehensions.

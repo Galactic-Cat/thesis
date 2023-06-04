@@ -37,7 +37,7 @@
 \renewcommand{\|}{\ |\ }
 
 \lstnewenvironment{quicklst}[1][]
-    {\lstset{float=tbhp,frame=single,captionpos=b,mathescape=true,escapeinside={!*}{*!},#1}}
+    {\lstset{float=tbhp,frame=single,captionpos=b,mathescape=true,escapeinside={!*}{*!},moredelim=**[is][\color{red}]{@r}{@},#1}}
     {}
 
 \lstnewenvironment{haskell}[1][]
@@ -74,7 +74,7 @@
 
     \input{sections/tracing}
 
-    % \input{sections/reverse}
+    \input{sections/reverse}
 
     \clearpage
     \bibliographystyle{unsrt}
