@@ -154,12 +154,14 @@
 
         With our data types defined, we can now look at the first cases of reverse AD.
         In Listing \ref{lst:reverse} we define two functions: \texttt{reverse'} which will do most of the actual reverse pass, and a wrapper function called \texttt{reverse}.
-        We also define two more utility functions: \texttt{seedAncestors} provides the adjoint of a variable to its ancestors (adding to the first part of the tuple in the \texttt{Reverse} map), it is defined in Section \ref{app:utility}.
+        We also define two more utility functions: \texttt{seedAncestors} provides the adjoint of a variable to its ancestors (adding to the first part of the tuple in the \texttt{Reverse} map), it is defined in Appendix \ref{app:utility}.
+        The function \texttt{getAncestors} just gets the ancestors of a specified statement in the trace, it is also defined in Appendix \ref{app:utility}.
 
         \begin{haskell}[caption=Reverse pass function, label=lst:reverse, gobble=12]
             reverse :: Forward -> String -> Adjoint -> Reverse
-            reverse t s v = reverse' t [s] r'
+            reverse t s v = reverse' t a r
                 where
                     r = seedAncestors t (Map.singleton s ([], v)) s
+                    a = getAncestors t s
         \end{haskell}
 
