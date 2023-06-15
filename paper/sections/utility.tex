@@ -1,0 +1,65 @@
+\section{Utility Functions for the Reverse Pass} \label{app:utility}
+    The first utility function used in Section \ref{sec:ad}, is \texttt{seedAncestors}.
+    It calculates the provides the ancestors of a node in the computational graph with the adjoint of said node.
+    The function is given in Listing \ref{lst:seedanc}.
+    It also uses two additional functions to combine adjoints, given in Listing \ref{lst:combine}.
+
+    \begin{haskell}[caption=Function for seeding ancestors of a node, label=lst:seedanc, gobble=8]
+        seedAncestors :: Forward -> Reverse -> String -> Adjoint -> Reverse
+        seedAncestors t r s a = setSeed (getAncestors s) r
+            where
+                traced :: Forwarded
+                (_, traced, _) = t Map.! s
+                
+                getAncestors :: String -> [String]
+                getAncestors s = case traced of
+                    FLift _     -> []
+                    FOp0  _     -> []
+                    FOp1  _ a   -> [a]
+                    FOp2  _ a b -> [a, b]
+                    FMap  _ a   -> [a]
+                    FMapV _ a   -> [a]
+                
+                toSingle :: Adjoint -> Float
+                toSingle (AArray vs)   = sum vs
+                toSingle ANull         = error "Tried to simplify null adjoint"
+                toSingle (AReal v)     = v
+                toSingle (ASparse _ v) = v
+
+                references :: String -> Int
+                references s = v
+                    where (_, _, v) = t Map.! s
+
+                setSeed :: [String] -> Reverse -> Reverse
+                setSeed []     z = z
+                setSeed (s:ss) z = setSeed ss z'
+                    where z' = case traced of
+                        FOp1 op _ -> case op of
+                            Idx i -> case r Map.lookup s of
+                                Just (as, _) ->
+                                    let as' = ASparse i (toSingle a) : as
+                                    in  if   length as' == references s
+                                        then Map.insert s (as', combineAdjoints as')
+    \end{haskell}
+
+    \begin{haskell}[caption=Functions to combine adjoints, label=lst:combine, gobble=8]
+        sumAdjoints :: [Adjoint] -> Adjoint
+        sumAdjoints [x]     = x
+        sumAdjoints (x:y:z) = sumAdjoints (sa x y : z)
+            where
+                sa :: Adjoint -> Adjoint -> Adjoint
+                sa (AReal rx) (AReal ry) = AReal (rx + ry)
+                sa _          _          = error "Can only sum singles"
+
+        combineAdjoints :: [Adjoint] -> Adjoint
+        combineAdjoints [x]     = x
+        combineAdjoints (x:y:z) = combineAdjoints (ca x y : z)
+            where
+                ca :: Adjoint -> Adjoint
+                ca (AArray as) (AArray bs)   = AArray (zipWith (+) as bs)
+                ca (AArray as) (ASparse i b) = AArray
+                    (take index as ++ [as !! index + b] ++ drop (index + 1) as)
+                ca (ASparse i b) (AArray as) = AArray
+                    (take index as ++ [as !! index + b] ++ drop (index + 1) as)
+                ca _           _             = error "Can only sum arrays"
+    \end{haskell}

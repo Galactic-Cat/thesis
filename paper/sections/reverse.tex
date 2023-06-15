@@ -138,24 +138,28 @@
         As discussed, to facilitate our reverse pass we need both the reference counting and intermediate values.
         Now let us define a function \texttt{reverse}, that makes the reverse pass.
         This reverse pass should take in an object of the \texttt{Forward} type and output a map containing the adjoints.
-        In Listing \ref{lst:reverse_def} we define a new data type for adjoints: one for arrays, one for real values, and a ``null'' value we can use as a placeholder.
+        In Listing \ref{lst:reverse_def} we define constructors for adjoints: one for arrays, one for sparse arrays (represented by a single index and the associated value), one for real values, and a ``null'' value we can use as a placeholder.
         We also define the \texttt{Reverse} type, which will contain these adjoints, and which is returned at the end of the reverse pass.
         The \texttt{Reverse} type maps the names of each part of the calculation to a 2-tuple containing a list of contributions of other adjoints, and its own final adjoint.
 
         \begin{haskell}[caption=Definition of the \texttt{Reverse} type, label=lst:reverse_def, gobble=12]
             data Adjoint
-                = AArray [Float]
+                = AArray  [Float]
                 | ANull
-                | AReal  Float
+                | AReal   Float
+                | ASparse Int Float
 
             type Reverse = Map String ([Adjoint], Adjoint)
         \end{haskell}
 
         With our data types defined, we can now look at the first cases of reverse AD.
         In Listing \ref{lst:reverse} we define two functions: \texttt{reverse'} which will do most of the actual reverse pass, and a wrapper function called \texttt{reverse}.
+        We also define two more utility functions: \texttt{seedAncestors} provides the adjoint of a variable to its ancestors (adding to the first part of the tuple in the \texttt{Reverse} map), it is defined in Section \ref{app:utility}.
 
         \begin{haskell}[caption=Reverse pass function, label=lst:reverse, gobble=12]
-            reverse :: Trace -> String -> Reverse
-            
+            reverse :: Forward -> String -> Adjoint -> Reverse
+            reverse t s v = reverse' t [s] r'
+                where
+                    r = seedAncestors t (Map.singleton s ([], v)) s
         \end{haskell}
 
