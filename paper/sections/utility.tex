@@ -3,7 +3,9 @@
     It calculates the provides the ancestors of a node in the computational graph with the adjoint of said node.
     The function is given in Listing \ref{lst:seedanc}.
     It uses the function \texttt{getAncestors}, given in Listing \ref{lst:getanc}, which simply gets the ancestors of a specific statement in the trace.
-    It also uses two additional functions to combine adjoints, given in Listing \ref{lst:combine}.
+    
+    The \texttt{seedAncestors} function takes an adjoint from a specified node in the computational graph (given by the input string \texttt{s}), discovers its ancestors using \texttt{getAncestors}, and then properly seeds them based on whats actually in the node (given by the trace).
+    The additional functions \texttt{sumAdjoints}, \texttt{combineAdjoints}, \texttt{toSingle}, and \texttt{toArray} are given in Listing \ref{lst:combine} in Section \ref{sec:ad}.
 
     \begin{haskell}[caption=Function for seeding ancestors of a node, label=lst:seedanc, gobble=8]
         seedAncestors :: Forward -> Reverse -> String -> Adjoint -> Reverse
@@ -39,48 +41,4 @@
                 FMap  _ a   -> [a]
                 FMapV _ a   -> [a]
             Nothing        -> []
-    \end{haskell}
-
-    \begin{haskell}[caption=Functions to transform and combine adjoints, label=lst:combine, gobble=8]
-        combineAdjoints :: [Adjoint] -> Adjoint
-        combineAdjoints [x]     = x
-        combineAdjoints (x:y:z) = combineAdjoints (ca x y : z)
-            where
-                ca :: Adjoint -> Adjoint
-                ca (AArray as) (AArray bs)   = AArray (zipWith (+) as bs)
-                ca (AArray as) (ASparse i b) = AArray
-                    (take index as ++ [as !! index + b] ++ drop (index + 1) as)
-                ca (ASparse i b) (AArray as) = AArray
-                    (take index as ++ [as !! index + b] ++ drop (index + 1) as)
-                ca _           _             = error "Can only sum arrays"
-        
-        sumAdjoints :: [Adjoint] -> Adjoint
-        sumAdjoints [x]     = x
-        sumAdjoints (x:y:z) = sumAdjoints (sa x y : z)
-            where
-                sa :: Adjoint -> Adjoint -> Adjoint
-                sa (AReal rx) (AReal ry) = AReal (rx + ry)
-                sa _          _          = error "Can only sum singles"
-
-        toSingle :: Adjoint -> Float
-        toSingle (AArray vs)   = sum vs
-        toSingle ANull         = error "Tried to simplify null adjoint"
-        toSingle (AReal v)     = v
-        toSingle (ASparse _ v) = v
-
-        toArray :: Adjoint -> Int -> Float
-        toArray a@(AArray v) l =
-            if   length v == l
-            then a
-            else error "Array of wrong length"
-        toArray ANull        l = error "Tried to make array from null adjoint"
-        toArray (AReal v)    l = repeat l v
-            where
-                repeat :: Int -> Float -> [Float]
-                repeat 0 _ = []
-                repeat i v = v : repeat (i - 1) v
-        toArray (ASparse i v) l = take i zeroes ++ [v] ++ take (l - i - 1) zeroes
-            where
-                zeroes :: [Float]
-                zeroes = 0.0 : zeroes
     \end{haskell}
