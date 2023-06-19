@@ -154,19 +154,211 @@
 
         With our data types defined, we can now look at the first cases of reverse AD.
         In Listing \ref{lst:reverse} we define two functions: \texttt{reverse'} which will do most of the actual reverse pass, and a wrapper function called \texttt{reverse}.
-        We also define two more utility functions: \texttt{seedAncestors} provides the adjoint of a variable to its ancestors (adding to the first part of the tuple in the \texttt{Reverse} map), it is defined in Appendix \ref{app:utility}.
-        The function \texttt{getAncestors} just gets the ancestors of a specified statement in the trace, it is also defined in Appendix \ref{app:utility}.
-
+        To actually assign the adjoints in the \texttt{Reverse} map, we define a function \texttt{seedAncestors}.
+        This function, given in Listing \ref{lst:seedanc}, for a specified item in the trace, finds and adds the adjoints to the ancestors of this item (the ancestors in the computational graph).
+        To do this it needs to transform and combine adjoints of differing dimensions, to do this it uses the utility functions \texttt{toSingle}, \texttt{toArray}, \texttt{sumAdjoints}, and \texttt{combineAdjoints}.
+        These functions are defined in Listing \ref{lst:combine}, which we will discuss in a bit.
+        It also uses a utility function \texttt{getAncestors} which simply finds the ancestors of a trace item by looking at the specific step made; it is defined in Appendix \ref{app:utility}.
+        An important thing to note here is that if the \texttt{seedAncestors} function calculates the final adjoint of a node, when it is available.
+        This means that \texttt{reverse'} can just look at whether or not the final adjoint of a node is available, and only continue when it is.
+        If it is not, we can be assured it will be calculated later, as the path to the output to the node in question should be calculated still. % NOTE: Dit is misschien een beetje vaag
+        
         \begin{haskell}[caption=Reverse pass function, label=lst:reverse, gobble=12]
             reverse :: Forward -> String -> Adjoint -> Reverse
             reverse t s v = reverse' t a r
                 where
                     r = seedAncestors t (Map.singleton s ([], v)) s
                     a = getAncestors t s
+
+            reverse' :: Forward -> [String] -> Reverse -> Reverse
+            reverse' _ []     r = r
+            reverse' t (s:ss) r = case r Map.! s of
+                (_, ANull) -> reverse' t ss r
+                (_, a)     -> reverse' t ss'' r'
+                where
+                    (r', ss') = seedAncestors t r s a
+                    ss''      = ss ++ ss'
         \end{haskell}
 
-        /clearpage %TODO: Remove this clearpage when integrating the listing below
+        As discussed, it is the \texttt{seedAncestors} function that does most of the work.
+        The string passed to it is the name of the node whose ancestors need to be seeded.
+        As noted before, this is the node which determines how the adjoints its ancestors' adjoints are transformed.
+        We see in Listing \ref{lst:seedanc} how we have different cases for the different constructors in our \texttt{Forwarded} class.
+        For variable instantiation and nullary operations, the result is simple, since they have no ancestors they do not influence any adjoints.
+        
+        The unary operations are already more complicated, mostly because both of them are used on arrays.
+        The idea behind indexing is very simple: indexing is a lot like variable reference.
+        Since nothing happens when indexing, nothing should happen on the reverse pass either, except of course that the adjoint of the new variable is part of the adjoint of the array it was indexed from.
+        It should also be noted that indexing as an operation in the forward pass will only be present if we chose to not trace away arrays.
+        If we did trace away arrays with our forward pass, indexing operations would really be nothing more than variable reference, which would vanish in the trace.
+        This also means that the ancestor of the indexing operation is an array.
+        It is now important to realize that for a variable in the program, its adjoint will be of the same type.
+        This is not something we really think about with real numbers, however when we want to get the adjoint of an array, it can not be a real number, as the array's items may be used separately of each other and could therefor have different individual adjoints.
+        When we bring this back to indexing this seems somewhat obvious as well, it is not the whole array that influenced the variable that, it was only the indexed variable.
+        This gives us a clear idea of the derivative for an array that was indexed on: an array with the tangent or adjoint at the index that was indexed, and zeroes for every other item.
+        This mimics how we would extract a singleton value from a vector, which is effectively what we are doing, only in the differentiated part of the number.
+        In Listing \ref{lst:seedanc} we see this because we add a \texttt{ASparse} adjoint to the ancestor of the indexing operation.
+        These reperesent a sparse array where the first argument is the index of the only non-zero item, and the second item is that value.
+
+        For the sum operation our earlier observation about how the adjoint of an array is an array as well comes into play again.
+        The sum operation, like indexing, also only applies to arrays, however instead of only using one element of the array, it instead uses all of them.
+        What helps here is that we can imagine the sum operation as a regular list of additions.
+        The reverse pass over an addition operation is very simple: the adjoint of the variables that are added together are equal to the adjoint of the sum (or to be precise: one times the adjoint).
+        Now when we extend this to our array, we see that the (partial) adjoint of the array that is summed, is just an array with the adjoint of the sum for every item in array.
+
+        \begin{haskell}[caption=Function for seeding ancestors of a node, label=lst:seedanc, gobble=12]
+            seedAncestors :: Forward -> Reverse -> String -> Adjoint -> (Reverse, [String])
+            seedAncestors t r s a = case traced of
+                FLift _        -> (r, [])
+                FOp0  _        -> (r, [])
+
+                FOp1  op s1    -> case op of
+                    Idx i -> (addAdjoint r s1 (ASparse i (toSingle a)), [s1])
+                    Sum   -> (addAdjoint r s (AArray (toArray a)), [s1])
+                
+                FOp2  op s1 s2 -> case op of
+                    Add -> 
+                        let r1 = addAdjoint r  s1 (AReal (toSingle a))
+                            r2 = addAdjoint r1 s2 (AReal (toSingle a))
+                        in  (r2, [s1, s2])
+                    Mul ->
+                        let r1 = addAdjoint r  s1 (AReal ((toSingle a) * intermediateF s2))
+                            r2 = addAdjoint r1 s2 (AReal ((toSingle a) * intermediateF s1))
+                        in  (r2, [s1, s2])
+                    Sub ->
+                        let r1 = addAdjoint r  s1 (AReal (toSingle a))
+                            r2 = addAdjoint r1 s2 (AReal (toSingle a))
+                        in  (r2, [s1, s2])
+                
+                FMap  fss s1   ->
+                    let (r1, as, ss) = seedMap fss r s 0
+                    in  (addAdjoint r1 s1 as, s1 : ss)
+                
+                where    
+                    addAdjoint :: Reverse -> String -> Adjoint -> Reverse
+                    addAdjoint z s b =
+                        let as' = b : as
+                        in  case t Map.! s of
+                            (_, f, c) ->
+                                if   length as' == c
+                                then Map.insert s (as', combineOrSumAdjoints f as') z
+                                else Map.insert s (as', ANull) z
+                        where
+                            as = case Map.lookup s z of
+                                Just (v, _) -> v
+                                Nothing     -> []
+
+                    traced :: Forwarded
+                    (_, traced, _) = t Map.! s
+
+                    intermediateA :: String -> [Float]
+                    intermediateA s = case t Map.! s of
+                        (TArray _ v, _, _) -> v
+                        _                  -> error "Intermediate not an array"
+
+                    intermediateF :: String -> Float
+                    intermediateF s = case t Map.! s of
+                        (TReal _ v, _, _) -> v
+                        _                 -> error "Intermediate not a float"
+        \end{haskell}
+
+        Our binary operations are relatively simple, as they are very standard and do not involve arrays.
+        We just discussed how addition just ``passes'' its adjoints through to its ancestors, and the same goes for subtraction.
+        That just leaves us with multiplication, here we see the first use of our intermediate values.
+        Using the \texttt{intermediateF} function, we extract the intermediate values from a multiplication's ancestors from our forward pass.
+        We then multiply those by the adjoint, and pass them on the appropriate ancestor.
+
+        \begin{figure}[htb]
+            \centering
+            \includegraphics[scale=0.5]{diagrams/map_example.png}
+            \caption{Computational graph of $g(a,\vec{b})\coloneqq\texttt{map}\ (+a)\ \vec{b}$}
+            \label{fig:map_graph}
+        \end{figure}
+
+        Now we come to the map operations, which are possibly the most complicated.
+        Examine the computational graph in Figure \ref{fig:map_graph}, where we map a simple addition over an array.
+        In this figure, the map is displayed as a box, this is because in our trace, maps are stored as separate sub-traces.
+        This might seem a little silly for a simple addition, but since maps can take any function (within the bounds of the DSL), we need to account for more complicated functions as well (e.g. including control flow, etc.)
+        Furthermore, highlighting the map as a box or context on its own highlights and interesting property: this context can access the parent context (the whole program).
+        While it might be tempting to just run our existing reverse-pass functions on these sub-traces, we would still need to gather the adjoints into a single adjoint array as the adjoint for the original array.
+        Furthermore, it starts to become muddy what to do with variables that are used by the map, but are not contained within it, like $a$ in Figure \ref{fig:map_graph}.
+        We also do not want our reverse-pass to start leaking out of the map operation: in Figure \ref{fig:map_graph}, this would happen if we accidentally continued our reverse pas for $a$, while that is actually out of scope of our map operation, and should be done by the overarching reverse pass.
+        Which leads us to another problem: what if a variable is only used in the context of a map (again like $a$ in Figure \ref{fig:map_graph}), if we do not follow it up within the reverse pass in the map, we need to add it to the queue of the overarching reverse pass.
+        In Figure \ref{fig:map_graph}, $a$ is an informal ancestor of the map operation, one that is not immediately obvious (especially not in more complex mapped functions).
+        
+        All this is why, in Listing \ref{lst:rev_maps}, we introduce the \texttt{seedMap} function, that is specifically made for continuing the reverse pass within a map.
+        It uses \texttt{seedAncestors} to still calculate and pass the adjoints within our map, but it makes sure only the straight-line function of a single item in the map is explored, any other variables that are used in the map trace are given their adjoints, but not explored: they are instead stored and added to the overarching reverse pass' queue.
+        It might be important to reiterate here that since these traces are single-line programming, and due to the nature of functional programming, only one ancestor of any action is within the context of the sub-trace, while all others should be from the overarching context.
+        Other items in the array that is mapped over are also considered in the overarching context, since the sub-traces only traces a the map over a single item.
+        Very important is also that intermediate values in this context cannot escape this context in any ways, they can not be used by other parts of the program, as they are all locked away in the map operation.
+        (If this were possible, it would violate the functional nature of the program.)
+
+        In Listing \ref{lst:rev_maps} we see this all coming together.
+        The \texttt{seedMap} function loops over the sub-traces to get their adjoints (and any outside variables that need visiting).
+        Then \texttt{seedMap'} uses \texttt{seedAncestors} to actually move the reverse pass through a single sub-trace, and to get the final adjoint.
+        The \texttt{findAncestor} function is used to find which of the found ancestors is actually in the sub-trace, and which ones come from outside the sub-trace's context.
+
+        \begin{haskell}[caption=Functions for the reverse pass through maps, label=lst:rev_maps, gobble=12]
+            seedMap :: [Forward] -> Reverse -> Adjoint -> String -> Int
+                -> (Reverse, Adjoint, [String])
+            seedMap []     r _ _ _ = (r, AArray [], [])
+            seedMap (f:fs) r a s c =
+                let si                  = s ++ '!' : show c
+                    (AArray as)         = a
+                    ai                  = AReal (as !! c)
+                    (ra, AReal  aa, sa) = seedMap' f r ai si 
+                    (rr, AArray ar, sr) = seedMap fs ra s (c + 1)
+                in (rr, AArray aa : ar, sa ++ sr)
+
+            seedMap' :: Forward -> Reverse -> Adjoint -> String
+                -> (Reverse, Adjoint, [String])
+            seedMap' f r a s =
+                let (rr, sr) = seedAncestors f r s a
+                    (sc, so) = findAncestor sr
+                in  case sc of
+                    Just sn -> 
+                        let (rf, af, sf) = seedMap' f rr (getAdjoint rr sn) sn
+                        in  (rf, af, so ++ sf)
+                    Nothing -> (rr, a, so)
+                where
+                    getAdjoint :: Reverse -> String -> Adjoint
+                    getAdjoint r s = case Map.lookup s r of
+                        Just (_, a) -> a
+                        Nothing     -> ANull
+                    
+                    findAncestor :: [String] -> (Maybe String, [String])
+                    findAncestor []     = (Nothing, [])
+                    findAncestor (c:cs) =
+                        let (cr, crs) = findAncestor cs
+                        in  case cr of
+                            Just cr' -> if cr' == c then (cr, crs) else (cr, c : crs)
+                            Nothing  ->
+                                if   Map.member c f 
+                                then (Just c, crs)
+                                else (Nothing, c : crs)
+        \end{haskell}
+
+        For vectorized maps (\texttt{FMapV} in the forward pass) the process is very similar, however we now use the single sub-trace to calculate the adjoints.
+        Since the essence of the vectorization means that all items in the array follow the same path, we can calculate the adjoint for each item at the same time.
+        % TODO: Expand this with code
+
+        We mentioned transforming and combining adjoints briefly before, but it is something we should look into further.
+        First off, as mentioned before, adjoints of real numbers need to be real numbers, and adjoints of arrays need to be arrays as well.
+        However, some operations in our DSL transform an array into a single number (like sum or indexing), meaning we need to transform these adjoints from real numbers back into arrays.
+        The functions \texttt{toSingle} and \texttt{toArray} in Listing \ref{lst:combine} make these transformations, or assure the adjoints are in the right shape.
+        The \texttt{toArray} also takes in an integer that represents the length of the array, as we need the adjoint arrays to be the same size of the primal arrays.
+        % TODO: Check if the uses of toArray provide the length of the array
+
+        Furthermore, we also need to sum partial adjoints into a single adjoint.
+        This is fairly simple to do for real values, which happens in \texttt{sumAdjoints} in Listing \ref{lst:combine}.
+        The arrays are little more in-depth however, since they need to be summed up element-wise.
+        This is what happens in \texttt{combineAdjoints}.
+        We also define a utility function \texttt{combineOrSumAdjoints} which looks at the current step from the trace to determine whether \texttt{combineAdjoints} or \texttt{sumAdjoints} should be used.
+        
+        % TODO: Add combineOrSumAdjoints 
         \begin{haskell}[caption=Functions to transform and combine adjoints, label=lst:combine, gobble=12]
+            combineOrSumAdjoints :: Forwarded -> [Adjoint] -> Adjoint
+
             combineAdjoints :: [Adjoint] -> Adjoint
             combineAdjoints [x]     = x
             combineAdjoints (x:y:z) = combineAdjoints (ca x y : z)
@@ -193,10 +385,10 @@
             toSingle (AReal v)     = v
             toSingle (ASparse _ v) = v
     
-            toArray :: Adjoint -> Int -> Float
-            toArray a@(AArray v) l =
+            toArray :: Adjoint -> Int -> [Float]
+            toArray (AArray v) l =
                 if   length v == l
-                then a
+                then v
                 else error "Array of wrong length"
             toArray ANull        l = error "Tried to make array from null adjoint"
             toArray (AReal v)    l = repeat l v

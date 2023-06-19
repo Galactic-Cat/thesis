@@ -1,34 +1,5 @@
 \section{Utility Functions for the Reverse Pass} \label{app:utility}
-    The first utility function used in Section \ref{sec:ad}, is \texttt{seedAncestors}.
-    It calculates the provides the ancestors of a node in the computational graph with the adjoint of said node.
-    The function is given in Listing \ref{lst:seedanc}.
-    It uses the function \texttt{getAncestors}, given in Listing \ref{lst:getanc}, which simply gets the ancestors of a specific statement in the trace.
-    
-    The \texttt{seedAncestors} function takes an adjoint from a specified node in the computational graph (given by the input string \texttt{s}), discovers its ancestors using \texttt{getAncestors}, and then properly seeds them based on whats actually in the node (given by the trace).
-    The additional functions \texttt{sumAdjoints}, \texttt{combineAdjoints}, \texttt{toSingle}, and \texttt{toArray} are given in Listing \ref{lst:combine} in Section \ref{sec:ad}.
-
-    \begin{haskell}[caption=Function for seeding ancestors of a node, label=lst:seedanc, gobble=8]
-        seedAncestors :: Forward -> Reverse -> String -> Adjoint -> Reverse
-        seedAncestors t r s a = setSeed (getAncestors s) r
-            where
-                traced :: Forwarded
-                (_, traced, _) = t Map.! s
-
-                references :: String -> Int
-                references s = v
-                    where (_, _, v) = t Map.! s
-
-                setSeed :: [String] -> Reverse -> Reverse
-                setSeed []     z = z
-                setSeed (s:ss) z = setSeed ss z'
-                    where z' = case traced of
-                        FOp1 op _ -> case op of
-                            Idx i -> case r Map.lookup s of
-                                Just (as, _) ->
-                                    let as' = ASparse i (toSingle a) : as
-                                    in  if   length as' == references s
-                                        then Map.insert s (as', combineAdjoints as')
-    \end{haskell}
+    We define an utility function \texttt{getAncestors} in Listing \ref{lst:getanc}, which gets the computational graph ancestors of a step in the forward pass/trace.
 
     \begin{haskell}[caption=Function to get ancestors from a node in the trace, label=lst:getanc, gobble=8]
         getAncestors :: Forward -> String -> [String]
