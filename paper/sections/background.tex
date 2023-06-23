@@ -6,15 +6,54 @@
         Unfortunately, due to the way real numbers are represented using floating-point computation, this method is prone to round-off error (or truncation error).
         AD avoids this by actually performing the differentiation on a program, to produce the differentiated program.
         This is very similar to how a human would differentiate a mathematical function (sometimes called symbolic or manual differentiation), but performed on a computer program.
-        AD makes very explicit use of the chain rule of partial derivatives of compound functions, which states that we can combine partial derivatives of parts of the function together into the complete derivative.
-        For instance, when if some variable $z$ depends on the variable $y$, which then depends on the variable $x$, we can obtain the derivative of $x$ under $z$ using the chain rule as in Equation \ref{eq:chainrule}.
-        \begin{equation} \label{eq:chainrule}
-            \frac{dz}{dx}=\frac{\partial z}{\partial y}\cdot\frac{\partial y}{\partial x}
-        \end{equation}
+        
+        AD makes very explicit use of the chain rule of partial derivatives of compound functions, which provides a method for finding the derivative of compound functions and states that we can combine partial derivatives of parts of the function together into the complete derivative.
+        Say we have some single-variate function $h(x)$, which is the compound function of the functions $f$ and $g$:
+        \[h(x)=(f\circ g)(x)\]
+        In this case, the chain rule tells us that the derivative of $h(x)$ is given by as $\tfrac{d}{dx}h(x)$:
+        \[\frac{d}{dx}h(x)=\frac{d}{dx}(f\circ g)(x)=\frac{df}{dg}\biggr|_{g(x)}\cdot\frac{dg}{dx}\biggr|_x\]
+        For clarity, in Lagrange's notation, where $h'(x)$ is the derivative of $h(x)$, this same statement can be expressed as:
+        \[h'(x)=(f\circ g)'(x)=f'(g(x))\cdot g'(x)\]
+        The chain rule also extends to compositions of more than two functions.
+        For example, say we have a function $k(x)$ as below:
+        \[k(x)=(f\circ g\circ h)(x)\]
+        We can then find the find the derivative of $k(x)$ using the chain rule as well:
+        \[\frac{d}{dx}k(x)=\frac{d}{dx}(f\circ g\circ h)(x)=\frac{df}{dg}\biggr|_{g(h(x))}\cdot\frac{dg}{dh}\biggr|_{h(x)}\cdot\frac{dh}{dx}\biggr|_x\]
+        Again for clarity, in Lagrange's notation this would be:
+        \begin{align*}
+            k'(x)=(f\circ g\circ h)'(x)&=f'((g\circ h)(x))\cdot(g\circ h)'(x)\\
+            &=f'((g\circ h)(x))\cdot g'(h(x))\cdot h'(x)
+        \end{align*}
 
-        To actually implement automatic differentiation, we seek to break the target program down to its most basic mathematical operations.
-        Then we can find the partial derivatives of these operations, and use the chain rule to combine them together into the derivative of the program.
-        There are two main ways to actually resolves these derivatives: using either forward accumulation or backward/reverse accumulation.
+        The chain rule also provides us with a method of deriving multivariate functions.
+        For instance, we can imagine a function $f(x,y)$.
+        Now, the derivative of $f$ changes depending on which variable we wish to derive with respect to.
+        Furthermore this is not a composition of functions, so the chain rule does not come into play.
+        However, if we image the variables $x$ and $y$ as single-variable functions $x(t)$ and $y(t)$ we can find the derivative of $f$ with respect to $t$ using the chain rule.
+        We get:
+        \[f(x(t),y(t))\]
+        Now to calculate the derivate of $f$ with respect to $t$, we first need to find the derivative of $x$ with respect to $t$ and the derivative of $y$ with respect to $t$.
+        The chain rule tells us that the derivative of $f$ here is equal to the partial derivative of $f$ with respect to $x$ summed with the partial derivative of $f$ with respect to $y$.
+        We can express this as:
+        \[\frac{d}{dt}f(x(t),y(t))=\frac{\partial f}{\partial x}\biggr|_{x(t)}\cdot\frac{dx}{dt}\biggr|_t+\frac{\partial f}{\partial y}\biggr|_{y(t)}\cdot\frac{dy}{dt}\biggr|_t\]
+
+        An important thing to note about the chain rule is that we still need the intermediate primal values in a compound function.
+        Review the following compound function:
+        \[(f\circ g\circ h\circ k)(x)\]
+        In Lagrange's notation, the derivative becomes:
+        \begin{align*}
+            (f\circ g\circ h\circ k)'(x)&=f'((g\circ h\circ k)(x))\cdot g'((h\circ k)(x))\cdot h'(k(x))\cdot k'(x)\\
+            &=f'({\color{green}g({\color{red}h({\color{blue}k(x)})})})\cdot g'({\color{red}h({\color{blue}k(x)})})\cdot h'({\color{blue}k(x)})\cdot k'(x)
+        \end{align*}
+        See how on the second line we have highlighted the primal parts of the equation, the intermediate values that we need for finding the derivative.
+        Also note how values deeper in the chain are used multiple times; $h(k(x))$ is used twice: first in the derivative $f'$ and second in the derivative $g'$.
+        $k(x)$ is even used three times.
+        Looking at this example, it becomes very clear that it would be more efficient to calculate $k(x)$ once and save that result somehow, rather than recalculating it every time it came up.
+        The storing and reusing of intermediate values is a fundamental property of AD, and is called ``sharing''.
+
+        To actually implement automatic differentiation, we seek to break the target program down to its most basic mathematical operations, for which we know the derivatives.
+        Then we can use the chain rule to combine them together into the derivative of the whole program.
+        There are two main ways to actually resolve these derivatives: using either forward accumulation or backward/reverse accumulation.
         When applied in AD implementations these are commonly respectively referred to as forward-mode and reverse-mode.
         Both methods are described in the 1986 paper ``The arithmetic of differentiation'' by B. Rall \cite{rall1986arithmetic}.
         
@@ -38,18 +77,18 @@
         In reverse-mode, we peg the derivative part of one of our outputs with some seed (often $1$), and set the derivative parts of the other outputs to $0$.
         These derivative parts are generally referred to as adjoints instead of tangents in reverse-mode.
         When the outputs are set, we can work our way back through the function, calculating the derivative parts from the output to the input.
-        Intuitively, this computes the change of the inputs for a small change in an output.
+        Intuitively, this computes the gradient of the output dimension we pegged to $1$, or the direction of the steepest slope.
         Practically, the idea of working back through a program requires some way of knowing where the outputs came from (a sort of dependency structure).
-        This then requires a forward pass, to find this structure, and often to setup any dual-numbers or other implementation details.
-        And while reverse-mode is definitely harder to implement, it also provides us with a way to calculate the sensitivity of all inputs to an output, which is much more efficient for functions with many more inputs than outputs (which can be quite common in certain fields like neural networks).
+        This then requires a forward pass, to find this structure, to calculate the intermediate values, and often to setup any dual-numbers or other implementation details.
+        And while reverse-mode is definitely harder to implement, it also provides us with a way to calculate the sensitivity of all inputs to an output, which is much more efficient for functions with many more inputs than outputs (which can be quite common in certain applications like neural networks).
 
         In mathematical terms, calculating the partial derivative of one output with regards to one input, means calculating one cell in the Jacobian, the matrix of all partial derivatives.
-        For a function $f:\mathbb{R}^n\to\mathbb{R}^m$ with $n$ inputs and $m$ outputs, the Jacobian would be a $n\times m$ matrix.
-        Here a column $i$ represents the partial derivatives $\frac{\partial\vec{f}}{\partial x_i}$, where $\vec{f}$ are all outputs of $f$, and $x_i$ represents a single input.
-        A row $j$ then represents the derivatives $\nabla f_j=\frac{\partial f_j}{\partial\vec{x}}$, where $\vec{x}$ are all inputs of $f$, and $\nabla f_j$ is also known as the gradient of $f_j$.
+        For a function $f:\mathbb{R}^n\to\mathbb{R}^m$ with $n$ inputs and $m$ outputs, the Jacobian $J_f$ would be a $n\times m$ matrix.
+        Here a column $i$ represents the partial derivatives $\tfrac{\partial\vec{f}}{\partial x_i}$, where $\vec{f}$ are all outputs of $f$, and $x_i$ represents a single input.
+        A row $j$ then represents the derivatives $\nabla f_j=\tfrac{\partial f_j}{\partial\vec{x}}$, where $\vec{x}$ are all inputs of $f$, and $\nabla f_j$ is also known as the gradient of the single output value $f_j$.
         This is also shown in Equation \ref{eq:jacobian}, showing the Jacobian for some function $f$ with $n$ inputs ($x_1,\dots,x_n$) and $m$ inputs ($f_1,\dots,f_m$).
         An important take-away here is that forward-mode computes the derivatives of all outputs with regards to a single input, so a column in the Jacobian, and reverse-mode computes the derivatives of all inputs with regards to a single output, so a row in the Jacobian.
-        Again, forward-mode is more efficient when we have more outputs than inputs or when the Jacobian has more columns than rows, and the reverse-mode is more efficient for functions with more inputs than outputs or for Jacobians with more rows than columns.
+        Again, if we want to calculate the full Jacobian, forward-mode is more efficient when we have more outputs than inputs or when the Jacobian has more columns than rows, and the reverse-mode is more efficient for functions with more inputs than outputs or for Jacobians with more rows than columns.
 
         \begin{equation} \label{eq:jacobian}
             J_f=\left[\frac{\partial \vec{f}}{\partial x_1},\dots,\frac{\partial \vec{f}}{\partial x_n}\right]=\begin{bmatrix}\nabla f_1\\\vdots\\\nabla f_m\end{bmatrix}=\begin{bmatrix}
@@ -59,20 +98,25 @@
             \end{bmatrix}
         \end{equation}
 
-        While it was previously shown that reverse-mode automatic differentiation could be executed in time equal to some constant multiple of the execution time of the primal program \cite{linnainmaa1976taylor}, it seemed that a constant multiple of the execution memory was also needed, which could become very expensive for large programs.
-        However, in 1992, Andreas Griewank showed that by using taping and checkpointing we could reduce the time and space complexity to a constant multiple of the log of the execution time \cite{griewank1992achieving}.
+        While it has long been known that reverse-mode automatic differentiation could be executed in time equal to some constant multiple of the execution time of the primal program \cite{linnainmaa1976taylor}, it seemed that a constant multiple of the execution memory was also needed, which could become very expensive for large programs.
+        However, in 1992, Andreas Griewank showed that by using taping and checkpointing we could trace time complexity for space complexity to reduce either to a constant multiple of the log of the execution time \cite{griewank1992achieving}.
         In general the practice of taping refers to a form of tracing on the program we wish to differentiate, where we execute the program as normal and record all the steps and intermediate values in a first-in-last-out data structure referred to as a "tape" or Wengert list.
         In a second phase to the reverse-mode algorithm, the tape is then used to calculate the derivatives in question, which due to the first-in-last-out nature of the tape, is in the precise reverse of the execution order of the program.
         An important advantage of taping is that by giving each variable and intermediate calculation a unique id we can avoid redundant execution, because we can just refer to the intermediate value or tangent/adjoint stored in the tape.
         While taping is efficient time-wise, it clearly adds a memory overhead that can be quite sizable for large programs.
-        Checkpointing aims to address this overhead by storing parts of the tape on disk, basically cutting the calculation of the derivatives in multiple steps.
-        It should be noted that an input agnostic form of reverse-mode AD is also possible, where the primal program is transformed into a program that computes its derivative for any input, for which taping would only refer to storing the operations without any intermediate values.
-        This is referred to as source transformation \cite{bischof2000computing}, and in its most basic form can be implemented as just interlacing the derivative calculations into the regular program.
+        Checkpointing aims to address this by storing multiple parts of the tape to memory attached to checkpoints in the program's execution.
+        The trick here being, that on the reverse-pass only the intermediate values from the most recently encountered checkpoint are loaded from memory, intermediate values that were not stored as part of this checkpoint are recalculated.
+        By strategically placing these checkpoints, and deciding which intermediate values are stored, this can cut the size complexity at a relatively small time complexity increase.
+        It should be noted that automatic differentiation can also be performed on a program where we do not have any specific inputs.
+        We can do this using source transformation \cite{bischof2000computing}.
+        In its most basic form source transformation can be implemented as just interlacing the derivative calculations into the regular program.
         An example of this is provided in Listing \ref{lst:transformation_fw}, where we calculate the derivative of some variable y (as dy) with regards to the variable x1.
         For reverse-mode AD this kind of interlacing is not possible, as we need to reach the end of the program before we can start the reverse pass, which is exactly why we record our steps on the tape: so we can reverse over the tape and know how to produce our reverse AD program.
         An example of this is provided in Listing \ref{lst:transformation_rv}, where we again calculate the derivative of y (as dy), with regards to x1 and x2.
+        So, to summarize, for a function $f:A\to B$, source transformation finds the derivative function for any input in the domain $A$, whereas dual-numbers (or similar approaches) find the derivative function for a specific input $a\in A$.
+        Of course, in complex functions with a lot of control flow, source transformation can become cumbersome as it needs to account for all possible inputs, whereas dual-numbers only needs to account for one.
 
-        \begin{quicklst}[caption={An example of input-agnostic forward mode AD by source transformation, with the AD statements in red}, label=lst:transformation_fw, gobble=12]
+        \begin{quicklst}[caption={An example of forward mode AD by source transformation, with the AD statements in red}, label=lst:transformation_fw, gobble=12]
              x1 = 15
             @rdx1 = 1@
              x2 = 7
@@ -83,19 +127,20 @@
             @rdy  = r1 $\color{red}\times$ dx2 + dr1 $\color{red}\times$ x2@
         \end{quicklst}
 
-        \begin{quicklst}[caption={An example of input-agnostic reverse mode AD by source transformation, with the AD statements in red}, label=lst:transformation_rv, gobble=12]
+        \begin{quicklst}[caption={An example of reverse mode AD by source transformation, with the AD statements in red}, label=lst:transformation_rv, gobble=12]
              x1 = 15
              x2 = 7
              r1 = x1 + x2
              y  = r1 $\times$ x2
 
             @rdy  = 1@
-            @rdr1 = rdy $\color{red}\times$ x2@
-            @rdx2 = rdy $\color{red}\times$ r1 + rd1 $\color{red}\times$ 1@
-            @rdx1 = rd1 $\color{red}\times$ 1@
+            @rdr1 = dy $\color{red}\times$ x2@
+            @rdx2 = dy $\color{red}\times$ r1 + dr1 $\color{red}\times$ 1@
+            @rdx1 = dr1 $\color{red}\times$ 1@
         \end{quicklst}
         
-        For forward-mode AD, the evaluation of the derivative is done during execution. Like in 1996's FADBAD package, which provided both forward-mode and reverse-mode AD for C++ \cite{bendtsen1996fadbad}.
+        For forward-mode AD, the evaluation of the derivative is done during execution.
+        Like in 1996's FADBAD package, which provided both forward-mode and reverse-mode AD for C++ \cite{bendtsen1996fadbad}.
         The reverse-mode uses the taping method described by Griewank, implemented through a method called operator overloading.
         In forward-mode, operator overloading refers to providing the basic mathematical operators with methods that work on the numbers represented by a pair (of a primal part and a tangent part); this is the dual-numbers approach we mentioned before.
         For reverse-mode, operator overloading is used to rewrite the basic mathematical operators, so they record their use and intermediate values to a single tape data structure.
@@ -107,9 +152,8 @@
         It also implements the previously discussed checkpointing, where part of the tape is stored to be restored and differentiated later.
         This, in theory, allows for differentiating programs of arbitrary size, because the differentiation process is not limited by the size of the working memory \cite{griewank2008evaluating}.
 
-        More recently implementations, like Fei Wang et al. 2019 paper, have shown how to simplify reverse automatic differentiation using continuation passing style and delimited continuation \cite{wang2019demystifying}.
+        More recently implementations, like Fei Wang et al. 2019 paper, have shown how to simplify reverse automatic differentiation using continuation passing style and delimited continuations \cite{wang2019demystifying}.
         This method uses dual numbers and cleverly overloads operators so they call the forward pass as a continuation and then perform the backwards pass on the returned value.
-        This can be efficiently implemented in functional languages, which is important because taping required either mutability or additional time complexity.
 
         In 2022, Krawiec et al. show how reverse-mode AD can be extended efficiently to higher-order functional programs \cite{krawiec2022provably}.
         While the Wang paper also did this, Krawiec uses the functional nature to provide a correctness proof of the reverse-mode AD, something that had previously only been done on implementations that were either asymptotically inefficient or only worked on first-order languages.
@@ -127,29 +171,30 @@
     \subsection{Tracing}
         Tracing is a concept in computer science that is often left without proper definition.
         While the main ideas behind tracing are well known, they are generally assumed known by the reader and therefor left without explanation.
-        This is also in part because, in software engineering, the term tracing also refers to finding the origin of some call (``tracing'' the call stack), which is tangentially related to the tracing we are interested in, but can leave definitions of tracing a bit muddled.
+        This is also in part because, in software engineering, the term tracing also refers to finding the origin of some call (``tracing'' the call stack), which is only tangentially related to the tracing we are interested in, but can leave definitions of tracing a bit muddled.
         This is why, in Section \ref{sec:tracing}, we will discuss more about that proper definition.
         For now, it is important to know that, when we refer to tracing in this paper, we speak about tracing the path of computation through a program, given some (valid) input to said program.
-        In other terms, given a program and an input, we walk through the program and record each computational step for some later purpose.
-        This recording can happen with some domain-specific pseudo-language, or in full fledged code if we wish to revaluate the trace later on (or a combination of the two).
+        In other terms, given a program and an input, we walk through the program and record each computational step for some later purpose, like automatic differentiation.
+        This recording can happen with some domain-specific pseudo-language, or in full fledged code if we wish to revaluate the trace later (or a combination of the two).
 
         Doing tracing gives us some interesting insights into a program we trace.
         First, it effectively ignores control flow.
         This is fairly intuitive, when given a set of inputs to a program, the control flow will control what path the program uses, and since we only record computations we find what is often dubbed a ``straight-line program'' for some inputs.
-        This can be useful for instance in Automatic Differentiation, where we often only want to differentiate a computation, not the entire program including unused branches.
+        This can be useful for instance in automatic differentiation, where we often only want to differentiate a computation, not the entire program including unused branches.
         This will also be the use of tracing in this paper, as laid out in Section \ref{sec:ad}.
 
-        Tracing also often allows us to simplify the program in more ways that removing control flow.
-        This is through type selection, where we only select a subset of the original types present in the original program to be used in the trace.
-        For composite types, types constructed of other types, and collections, this is somewhat obvious: we can rewrite a pair of two values, into two different variables, which removes the pair from our type system in the trace.
-        The same can also be done for arrays, something that will prove useful for the tracing and differentiation of functional parallel array programming, described in Sections \ref{sec:bg_array} and \ref{sec:tracing}.
-        For some instances it also allows us to remove non-composite types from the type system in the trace.
-        For instance, as we remove control flow, we might want to ignore Boolean values altogether, especially if our input and output do not include any Boolean values.
-        This is highly dependent on which information we wish to see in our trace exactly, but if Boolean values are never actually used, they may as well be ignored.
-        In this case, we can ``trace away'' the types we wish to ignore by omitting any values of this type or any computational steps that produce this type.
-        However, it should be noted that this is not always possible, for instance if a type $\tau$ that we wish to trace away is used to construct a type $\sigma$ we wish to keep; tracing away the type $\tau$ would also mean tracing away the construction of the type $\sigma$ leaving us with an incomplete trace.
-        Of course, perhaps we can rewrite the production of the type $\sigma$ from $\tau$ in our trace, so we do not need $\tau$, however this would need to be done on a case-to-case basis for different methods $\tau\to\sigma$.
-        Regardless, tracing away types or keeping them, allows us control over what information we keep in the trace, and what information we choose to ignore.
+        % TODO: Incorporate this paragraph into Section 2 (Tracing)
+        % Tracing also often allows us to simplify the program in more ways that removing control flow.
+        % This is through type selection, where we only select a subset of the original types present in the original program to be used in the trace.
+        % For composite types, types constructed of other types, and collections, this is somewhat obvious: we can rewrite a pair of two values, into two different variables, which removes the pair from our type system in the trace.
+        % The same can also be done for arrays, something that will prove useful for the tracing and differentiation of functional parallel array programming, described in Sections \ref{sec:bg_array} and \ref{sec:tracing}.
+        % For some instances it also allows us to remove non-composite types from the type system in the trace.
+        % For instance, as we remove control flow, we might want to ignore Boolean values altogether, especially if our input and output do not include any Boolean values.
+        % This is highly dependent on which information we wish to see in our trace exactly, but if Boolean values are never actually used, they may as well be ignored.
+        % In this case, we can ``trace away'' the types we wish to ignore by omitting any values of this type or any computational steps that produce this type.
+        % However, it should be noted that this is not always possible, for instance if a type $\tau$ that we wish to trace away is used to construct a type $\sigma$ we wish to keep; tracing away the type $\tau$ would also mean tracing away the construction of the type $\sigma$ leaving us with an incomplete trace.
+        % Of course, perhaps we can rewrite the production of the type $\sigma$ from $\tau$ in our trace, so we do not need $\tau$, however this would need to be done on a case-to-case basis for different methods $\tau\to\sigma$.
+        % Regardless, tracing away types or keeping them, allows us control over what information we keep in the trace, and what information we choose to ignore.
 
         As mentioned, in literature we see this type of tracing used for automatic differentiation.
         One of these uses was by Bischof in 1991 \cite{bischof1991issues}.
