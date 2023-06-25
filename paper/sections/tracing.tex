@@ -1,8 +1,8 @@
 \section{Tracing} \label{sec:tracing}
     In the broadest terms, when we trace a program, we track the most basic steps the program takes provided some input.
-    This is relevant for many applications in Computer Science.
-    For example, certain automatic differentiation (AD) effectively implement the forward-pass as tracing, and then perform the reverse pass on the trace\cn.
-    Tracing is also used in Artificial Intelligence, where tracing applications can help determine how much memory needs to be allocated, which can speed up training if the model is run multiple times\cn.
+    This is relevant for many applications in computer science.
+    For example, certain automatic differentiation (AD) effectively implement the forward-pass as tracing, and then perform the reverse pass on the trace.
+    Tracing is also used in artificial intelligence, where tracing applications can help determine how much memory needs to be allocated, which can speed up training if the model is run multiple times.
 
     However, despite its ambivalence, tracing is rarely properly defined, or defined only for a specific use case.
     So, in this section we set out to create a more general definition of tracing.
@@ -10,10 +10,10 @@
     To start, it will help us along to set clear expectations for what we expect a tracing function to do.
     In the simplest terms, we expect a tracing program to take an input program with a set of inputs, and output a ``trace''.
     This output trace is defined as a sequence of operations the input program performed on the inputs to get the expected output.
-    A term often used for an output trace is a ``single-line program''\cn: a program without control flow.
+    A term often used for a trace is a ``single-line program'': a program without control flow.
     Clearing control flow like if-then-else statements is only natural: after all, provided some input the program will only walk down one variation of this branching path.
 
-    Furthermore, it is also generally accepted that the trace consists of a subset of the syntax of the input program.
+    Furthermore, it is also generally accepted that the trace consists of a subset of the types of the input program.
     Because we are generally more interested in what happens to the data in our program, we can ``trace away'' functions and data structures.
     More precisely, say our input program has the types as defined in Equation \ref{eq:typebase}, where we have sum-types as $\tau+\sigma$, product types as $\tau\times\sigma$, functions as $\tau\to\sigma$, literal real numbers, and literal Booleans.
 
@@ -58,7 +58,7 @@
         \end{aligned}
         \label{eq:switch}
     \end{equation}
-    While the switch operator looks like it mimics if-then-else statements, it is generally accepted that it does so in a non-lazy way\cn, where both $a$ and $b$ are evaluated before returning either.
+    While the switch operator looks like it mimics if-then-else statements, it is generally accepted that it does so in a non-lazy way, where both $a$ and $b$ are evaluated before returning either.
     The main problem here is that we wish to keep operators that produce types we keep in our trace, yet we do not wish (or are not even able to) express the Boolean value in our trace.
     Now, due to switch statement's likeness to if-then-else, the solution here is pretty clear: only trace the value that gets returned.
     However, it is not always that easy: as we introduce arrays and array operations in Section \ref{sec:arrays}, we will see how operations like mapping on an array need a special solution.
@@ -68,12 +68,12 @@
     This also means that, while the operations in our trace language might be a subset of the operations in the original expression language, they might contain modified operations
 
     It seems that our tracing definition comes down to a function that takes in a program and an input to that program, and outputs the steps taken by the program run on the input.
-    Where the input program takes uses some set of types, of which only a subset is kept in the trace, where the types in this subset may not be constructed using types from outside of the subset.
+    Where the input program uses some set of types, of which only a subset is kept in the trace, where the types in this subset may not be constructed using types from outside of the subset.
     What now remains is a concrete definition of the output of the tracing program.
-    We have already stated that it should somehow contain the steps done in by the input program.
+    We have already stated that it should somehow contain the steps done by the input program.
     The steps we wish to record are generally basic operations like arithmetic operations.
     But other operations, such as operations on arrays, can also be added depending on the ultimate goal of the tracing.
-    More importantly, as we expect our trace to be akin to a single-line program, we may consider our trace as a series of let-bindings, akin to A-normal form\cn.
+    More importantly, as we expect our trace to be akin to a single-line program, we may consider our trace as a series of let-bindings, akin to A-normal form.
     This means storing each operation as a pair of a unique name or id and the operation performed (like the name and value of the declarations in a let-binding).
     
     \subsection{Tracing Correctness} \label{sec:correctness}
@@ -135,7 +135,7 @@
 
     \subsection{Basic Tracing} \label{sec:steps}
         We now define some basic tracing steps for some arbitrary language.
-        For clarity's sake, we will do this is with Haskell\cn code.
+        For clarity's sake, we will do this is with Haskell code.
         To do this we first define a language and values on which we will operate.
         We do this in Listing \ref{lst:language}, where we define a basic lambda calculus.
         Here the value types are represented as the algebraic data type (ADT) \texttt{Value}, where we find constructors for Booleans (\texttt{VBool}), real numbers (\texttt{VReal}), and functions (\texttt{VFunc}).

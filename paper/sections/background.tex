@@ -183,19 +183,6 @@
         This can be useful for instance in automatic differentiation, where we often only want to differentiate a computation, not the entire program including unused branches.
         This will also be the use of tracing in this paper, as laid out in Section \ref{sec:ad}.
 
-        % TODO: Incorporate this paragraph into Section 2 (Tracing)
-        % Tracing also often allows us to simplify the program in more ways that removing control flow.
-        % This is through type selection, where we only select a subset of the original types present in the original program to be used in the trace.
-        % For composite types, types constructed of other types, and collections, this is somewhat obvious: we can rewrite a pair of two values, into two different variables, which removes the pair from our type system in the trace.
-        % The same can also be done for arrays, something that will prove useful for the tracing and differentiation of functional parallel array programming, described in Sections \ref{sec:bg_array} and \ref{sec:tracing}.
-        % For some instances it also allows us to remove non-composite types from the type system in the trace.
-        % For instance, as we remove control flow, we might want to ignore Boolean values altogether, especially if our input and output do not include any Boolean values.
-        % This is highly dependent on which information we wish to see in our trace exactly, but if Boolean values are never actually used, they may as well be ignored.
-        % In this case, we can ``trace away'' the types we wish to ignore by omitting any values of this type or any computational steps that produce this type.
-        % However, it should be noted that this is not always possible, for instance if a type $\tau$ that we wish to trace away is used to construct a type $\sigma$ we wish to keep; tracing away the type $\tau$ would also mean tracing away the construction of the type $\sigma$ leaving us with an incomplete trace.
-        % Of course, perhaps we can rewrite the production of the type $\sigma$ from $\tau$ in our trace, so we do not need $\tau$, however this would need to be done on a case-to-case basis for different methods $\tau\to\sigma$.
-        % Regardless, tracing away types or keeping them, allows us control over what information we keep in the trace, and what information we choose to ignore.
-
         As mentioned, in literature we see this type of tracing used for automatic differentiation.
         One of these uses was by Bischof in 1991 \cite{bischof1991issues}.
         In his paper, Bischof discusses the use of the computational graph of a program in automatic differentiation (using ADOL-C \cite{griewank1996algorithm}).
