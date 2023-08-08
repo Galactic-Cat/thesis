@@ -100,7 +100,7 @@
 
         While it has long been known that reverse-mode automatic differentiation could be executed in time equal to some constant multiple of the execution time of the primal program \cite{linnainmaa1976taylor}, it seemed that a constant multiple of the execution memory was also needed, which could become very expensive for large programs.
         However, in 1992, Andreas Griewank showed that by using taping and checkpointing we could trace time complexity for space complexity to reduce either to a constant multiple of the log of the execution time \cite{griewank1992achieving}.
-        In general the practice of taping refers to a form of tracing on the program we wish to differentiate, where we execute the program as normal and record all the steps and intermediate values in a first-in-last-out data structure referred to as a "tape" or Wengert list.
+        In general the practice of taping refers to a form of tracing on the program we wish to differentiate, where we execute the program as normal and record all the steps and intermediate values in a first-in-last-out data structure referred to as a ``tape'' or Wengert list.
         In a second phase to the reverse-mode algorithm, the tape is then used to calculate the derivatives in question, which due to the first-in-last-out nature of the tape, is in the precise reverse of the execution order of the program.
         An important advantage of taping is that by giving each variable and intermediate calculation a unique id we can avoid redundant execution, because we can just refer to the intermediate value or tangent/adjoint stored in the tape.
         While taping is efficient time-wise, it clearly adds a memory overhead that can be quite sizable for large programs.

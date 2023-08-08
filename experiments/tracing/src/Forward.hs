@@ -103,7 +103,7 @@ module Forward (
             fvs      = getName fv
             ff'      = renameForward ff fvs s
             rv       = fst $ forwardMapV n t s (TArray s' vs) (i + 1)
-        in  case rv of 
+        in  case rv of
             TArray _ ns -> (TArray s (unliftFloat fv : ns), ff')
             _           -> error "Type mismatch in forwardMapV (1)"
     forwardMapV _ _ _ _                  _ = error "Type mismatch in forwardMapV (2)"

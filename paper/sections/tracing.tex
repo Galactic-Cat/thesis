@@ -363,9 +363,9 @@
         This is because when working with arrays our expression will never refer to individual values in arrays, only to the array itself (and using its individual values from there).
         This means that to consistently refer to values that were in arrays in the original expression, we need to give a little more structure to the naming scheme.
         We do this by taking the name of the array, and adding the index of the item to create a name that is unique yet identifiable. 
-        Furthermore, we add in array operations: iota (or range operation) (\texttt{Iota}), indexing (\texttt{Idx}), sum (\texttt{Sum}), and map (\texttt{Map}).
-        It should be noted that iota and indexing take an integer argument as part of their operator.
-        For iota this is the size of the array to create, and for indexing this is naturally the index to get.
+        Furthermore, we add in array operations: iota (or range operation) (\texttt{Iota}), generate (\texttt{Gen}), indexing (\texttt{Idx}), sum (\texttt{Sum}), and map (\texttt{Map}).
+        It should be noted that iota, generate, and indexing take an integer argument as part of their operator.
+        For iota and generate this is the size of the array to create, and for indexing this is the index to get the value from.
         While we could allow our language with integers (or by casting floats) to allow using in-language numbers, this really is not all that interesting.
         If those arguments were part of our trace, it would just mean tracing them like any other number.
 
@@ -381,7 +381,7 @@
 
             data Op0 = Iota Int
             
-            data Op1 = Idx Int | Sum
+            data Op1 = Gen Int | Idx Int | Sum
 
             data Op2 = $\ldots$ | Map
         \end{haskell}
@@ -421,15 +421,21 @@
                 let (v1, t1) = trace n e1
                     s = getName
                 in  case (op, v1) of
+                    (Gen r, TFunc f) ->
+                        let s  = getName
+                            v  = [0.0 .. r]                            
+                            tg = traceArrayLift s v 0
+                            (vm, tm) = traceArrayMap f s v 0
+                        in  (vm, tm ++ tg)
                     -- Indexing is like variable reference, we do not need to add to the trace,
                     -- but we need to create the name to be consistent
-                    (Idx i, TArray s1 v) = 
+                    (Idx i, TArray s1 v) ->
                         -- Get the actual item using indexing (!!)
                         let x  = v !! i
                             s' = s1 ++ `!' : show i
                         in  (TReal s' x, t1)
                     -- For traceArraySum see Listing !*\ref{lst:trace_sum}*!
-                    (Sum, TArray s1 v) =
+                    (Sum, TArray s1 v) ->
                         let (vs, ts) = traceArraySum s1 v 0
                         -- We must not forget to add the trace of e1 to our trace here
                         in  (vs, ts ++ t1)

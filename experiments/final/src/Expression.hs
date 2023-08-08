@@ -12,7 +12,7 @@ module Expression (
     ),
     EValue (EArray, EBool, EReal),
     Op0 (Iota),
-    Op1 (Gen, Idx, Neg, Sin, Sum),
+    Op1 (Idx, Neg, Sin, Sum),
     Op2 (Add, Equ, Gt, Gte, Lt, Lte, Map, Mul, Neq, Sub),
     EEnvironment,
     eval
@@ -42,7 +42,7 @@ module Expression (
     
     newtype Op0 = Iota Int
         deriving (Show)
-    data Op1 = Gen Int | Idx Int | Neg | Sin | Sum
+    data Op1 = Idx Int | Neg | Sin | Sum
         deriving (Show)
     data Op2 = Add | Equ | Gt | Gte | Lt | Lte | Map | Mul | Neq | Sub
         deriving (Show)
@@ -68,17 +68,11 @@ module Expression (
     eval n (EOp1    op e1)    =
         let v1 = eval n e1
         in  case (op, v1) of
-            (Gen i, EFunc  a) -> EArray $ mapOver [0 .. (fromIntegral i)]
-                where
-                    mapOver []     = []
-                    mapOver (x:xs) = case a (EReal x) of
-                        EReal v -> v : mapOver xs
-                        _       -> error "Type mismatch in eval/EOp1 (1)"
             (Idx i, EArray a) -> EReal $ a !! i
             (Neg,   EBool  a) -> EBool $ not a
             (Sin,   EReal  a) -> EReal $ sin a
             (Sum,   EArray a) -> EReal $ sum a
-            _                 -> error "Type mismatch in eval/EOp1 (2)"
+            _                 -> error "Type mismatch in eval/EOp1"
     eval n (EOp2    op e1 e2) =
         let v1 = eval n e1
             v2 = eval n e2
