@@ -223,6 +223,14 @@ module AltForward (forward, Forward, Forwarded (FLift, FOp0, FOp1, FOp2, FMap, F
             f' = Map.insert s1 (FLift v', 0, v') f
         in  forwardArrayLift s (c + 1) vs f'
 
+    forwardMapAlt :: (FValue -> Int -> Forward -> (FValue, Forward, Int)) -> Int -> String -> String -> [Float] -> Int -> Forward -> (FValue, Foward, Int)
+    forwardMapAlt _  c _  sn []     _ f = (FArray sn [], f, c)
+    forwardMapAlt fn c so sn (x:xs) i f =
+        let sox = 'r' : show c
+            snx = sn ++ '!' : show i
+            v   = FReal sox x
+            (xv,  xf,  xc)  = fn v (c + 1) (Map.insert sox (FLift v, 0, ))
+
     -- Traces and calculates (intermediate) values for all steps in a mapping operation
     -- Takes in: the function to map, the current name counter, the name of the old array, the name of the new array,
     --   the float contents of the array, the current index, and the current forward map
@@ -236,10 +244,11 @@ module AltForward (forward, Forward, Forwarded (FLift, FOp0, FOp1, FOp2, FMap, F
             (xsv, xsf, xsc) = forwardMapFull fn xc so sn xs (i + 1) xf
         in  case (xv, xsv) of
             (FReal s' v, FArray _ vs) -> (FArray sn (v : vs), rename s' new xsf, xsc)
-            _                        -> error "Type mismatch in forwardMapFull"
+            _                         -> error "Type mismatch in forwardMapFull"
 
     vectorizeForward :: String -> String -> Forward -> Forward
     vectorizeForward so sn 0 f =
+
 
     -- Renames an item in the forward-trace
     rename :: String -> String -> Forward -> Forward
