@@ -363,7 +363,7 @@
         This is because when working with arrays our expression will never refer to individual values in arrays, only to the array itself (and using its individual values from there).
         This means that to consistently refer to values that were in arrays in the original expression, we need to give a little more structure to the naming scheme.
         We do this by taking the name of the array, and adding the index of the item to create a name that is unique yet identifiable. 
-        Furthermore, we add in array operations: iota (or range operation) (\texttt{Iota}), generate (\texttt{Gen}), indexing (\texttt{Idx}), sum (\texttt{Sum}), and map (\texttt{Map}).
+        Furthermore, we add in array operations: iota (or range) (\texttt{Iota}), generate (\texttt{Gen}), indexing (\texttt{Idx}), sum (\texttt{Sum}), and map (\texttt{Map}).
         It should be noted that iota, generate, and indexing take an integer argument as part of their operator.
         For iota and generate this is the size of the array to create, and for indexing this is the index to get the value from.
         While we could allow our language with integers (or by casting floats) to allow using in-language numbers, this really is not all that interesting.
@@ -422,8 +422,7 @@
                     s = getName
                 in  case (op, v1) of
                     (Gen r, TFunc f) ->
-                        let s  = getName
-                            v  = [0.0 .. r]                            
+                        let v  = [0.0 .. (r - 1)]                            
                             tg = traceArrayLift s v 0
                             (vm, tm) = traceArrayMap f s v 0
                         in  (vm, tm ++ tg)
@@ -511,6 +510,10 @@
         Luckily we can resolve this by renaming the returned value from that function, and changing the name in the trace.
         The signature of a function that does this is also included at the end of Listing \ref{lst:trace_map}, but its exact implementation is not of importance here.
 
+        Finally, the generate operation can be expressed as an iota operation followed by a map operation.
+        The iota operation provides us with the indices of the array to generate, and we can re-use the code for map for mapping the generator function over these indices.
+        This is also how we implemented it in Listing \ref{lst:trace_array}, using \texttt{traceArrayLift} from iota and \texttt{traceArrayMap} from map.
+
         \begin{haskell}[caption=Tracing the sum operator, label=lst:trace_sum, gobble=12]
             -- traceArraySum starts the trace, and traceArraySum' completes it
             -- This is necessary because we do not know the number of items in the array
@@ -561,7 +564,7 @@
 
         Luckily for us, in large parts tracing while keeping arrays is fairly easy.
         This is because we can treat most operations like how we treated operations for real numbers.
-        This has been done in Listing \ref{lst:trace_array2}, except for map, where replace the tracing patterns from Listing \ref{lst:trace_array}.
+        This has been done in Listing \ref{lst:trace_array2}, except for generate and map, where we replace the tracing patterns from Listing \ref{lst:trace_array}.
 
         \begin{haskell}[caption=Tracing whilst keeping arrays, label=lst:trace_array2, gobble=12]
             trace :: TEnvironment -> Expression -> (TValue, Trace)
@@ -597,25 +600,38 @@
                     (Sum, TArray s1 v) = (TReal s (sum v), (s, TOp1 Sum s1) : t1)
         \end{haskell}
 
-        In our current language, the main point of difficulty and interest is the map operation.
-        Map takes in a function, which is not a type we wish to keep in our trace, however it produces an array which we wish to keep in our trace.
+        In our current language, the main point of difficulty and interest is the generate and map operations.
+        Both take in a function, which is not a type we wish to keep in our trace, however it produces an array which we wish to keep in our trace.
         While we might be tempted to just discard the function component, we cannot do that because it provides the trace from the original array to the new array.
         Without that information our trace is no longer a functional (straight-line) program.
 
         The basic way to solve this, the naïve method, would be to attach an array of traces to the map operator, so they can be followed to derive the correct results.
         To easily do this we extend our \texttt{Traced} ADT with a special map constructor (\texttt{TMap}).
         We show this in Listing \ref{lst:trace_naive}.
+        We will also express our generate operation as a combination of the iota and map operations here.
         The traces in the \texttt{TMap} constructor correspond with the application of the function to be mapped to the individual item, for each item.
         The string references the array the map is performed on.
 
-        \begin{haskell}[caption={Tracing map while keeping arrays, naïvely}, label=lst:trace_naive, gobble=12]
+        \begin{haskell}[caption={Tracing generate and map while keeping arrays, naïvely}, label=lst:trace_naive, gobble=12]
             data Traced
                 = $\ldots$
                 | TMap [Trace] String
 
             trace :: TEnvironment -> Expression -> (TValue, Trace)
+            trace n (EOp1 op e1)    =
+                -- We first trace e1, and generate a name
+                let (v1, t1) = trace n e1
+                    s = getName
+                in  case (op, v1) of
+                    $\ldots$
+                    (Gen r, TFunc f) ->
+                        let tg = (s, TLift (TArray s [0 .. (r - 1)]))
+                            s' = getName
+                            (vs, ts) = traceMapNaive f s s' [0 .. (r - 1)] 0
+                        -- The trace becomes the iota followed by the map, explained below
+                        in  (vs, (s, TMap ts sa) : tg : t1)
+            
             trace n (EOp2 op e1 e2) =
-                -- We first trace e1 and e2, and generate a name
                 let (v1, t1) = trace n e1
                     (v2, t2) = trace n e2
                     s = getName
@@ -655,7 +671,7 @@
         Perhaps there is some control flow in the function body that checks if a number is even, or a factor of three, or something else entirely.
         In such a case, having a trace for each item may be strictly necessary.
         However, it also highlights for which functions it may not be: functions without control flow or branching.
-        After all, these functions are little straight-line programs, and should act the same no matter on what input they are applied.
+        After all, these functions are little straight-line programs, and should act the same no matter on what input they are applied (except for producing a different result, of course).
         Writing a function that checks if a the body of a lambda abstraction contains branching is very simple for this language: currently the only expression term that can introduce branching is the if-then-else statement.
         Unfortunately, we cannot check that at the moment the we trace a map operator.
         This is because any function here would already have been abstracted to a \texttt{TArray} value.
@@ -718,6 +734,20 @@
                     f = TFunc b ($\backslash$x -> trace (insert s x) e1)
                 in  (f, [])
 
+            trace n (EOp1 op e1) =
+                let (v1, t1) = trace n e1
+                    s = getName
+                in  case (op, v1) of
+                    $\ldots$
+                    (Gen r, TFunc b f) ->
+                        let tg = (s, TOp0 (Iota r))
+                            s' = getName
+                            (vs, ts) = traceMapNaive f s s' [0 .. (r - 1)] 0
+                        in  if   b
+                            then (vs, (s', TMap ts s) : tg : t1)
+                            else let t' = vectorizeTrace s' s (head ts)
+                                 in  (vs, (s, TMapV t' s) : tg : t1)
+
             trace n (EOp2 op e1 e2) =
                 let (v1, t1) = trace n e1
                     (v2, t2) = trace n e2
@@ -744,7 +774,7 @@
             deepRename :: String -> String -> Trace -> Trace
         \end{haskell}
 
-        What is important to take away from the shenanigans with the map operators is that, whilst our definitions and correctness assertions from Sections \ref{sec:tracing} and \ref{sec:correctness} gave us some guidance, there is ultimately no single way to trace everything.
+        What is important to take away from the shenanigans with the generate and map operators is that, whilst our definitions and correctness assertions from Sections \ref{sec:tracing} and \ref{sec:correctness} gave us some guidance, there is ultimately no single way to trace everything.
         The most important factor here is to keep reminding ourselves of the information we wish to keep in the trace.
         Not only the value types, but we also need the information needed to actually run the trace as a program.
-        Keeping this in mind, it becomes much more obvious how to trace the map operation.
+        Keeping this in mind, it becomes much more obvious how to trace these operations.
