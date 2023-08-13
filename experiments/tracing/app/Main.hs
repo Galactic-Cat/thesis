@@ -9,7 +9,7 @@ module Main (main) where
         eval)
     import Trace (trace, evalTrace, TValue (TReal, TArray))
     import Forward (forward)
-    import Reverse (reverse)
+    -- import Reverse (reverse)
     import qualified Data.Map.Strict as Map
     import Prelude hiding (reverse)
 
@@ -20,11 +20,11 @@ module Main (main) where
     test =
         ELet "f"
             (ELambda "z"
-                -- (EOp2 Mul (ERef "z") (ERef "x")))
-                (EIf
-                    (ERef "y")
-                    (EOp2 Mul (ERef "z") (ERef "x"))
-                    (EOp2 Add (ERef "z") (ERef "x"))))
+                (EOp2 Mul (ERef "z") (ERef "x")))
+                -- (EIf
+                --     (ERef "y")
+                --     (EOp2 Mul (ERef "z") (ERef "x"))
+                --     (EOp2 Add (ERef "z") (ERef "x"))))
             (ELet "a"
                 (EOp0 (Iota 5))
                 (ELet "b"
@@ -34,21 +34,22 @@ module Main (main) where
     result :: EValue
     result = eval input test
 
-    (tv, tt) = trace input False test
+    (tv, tt) = trace input True test
     te = case tv of
         TReal  s _ -> evalTrace tt s
         TArray s _ -> evalTrace tt s
         _          -> error "nop"
 
-    fw = forward tt
-    rv = case tv of
-        TReal  s _ -> reverse fw s 1.0
-        TArray s _ -> reverse fw s 1.0
+    (fv, ft) = forward input True test
+    -- rv = case tv of
+    --     TReal  s _ -> reverse fw s 1.0
+    --     TArray s _ -> reverse fw s 1.0
 
     main :: IO ()
     main = do
         -- print result
-        print tv
-        print fw
+        print (tv, fv)
+        print tt
+        print ft
         -- print te
-        print rv
+        -- print rv

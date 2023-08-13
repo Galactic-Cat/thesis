@@ -1,28 +1,25 @@
--- {-# OPTIONS_GHC -Wno-unused-imports -Wno-incomplete-patterns #-}
+{-# LANGUAGE InstanceSigs #-}
 
-module Forward (
-    addSuccessor,
-    forward,
-    Forward,
-    Forwarded (FLift, FOp0, FOp1, FOp2, FMap, FMapV)
-) where
+module Forward (forward, Forward, Forwarded (FLift, FOp0, FOp1, FOp2, FMap, FMapV), FValue (FArray, FBool, FReal, FFunc)) where
     import qualified Data.Map.Strict as Map
     import Data.Map (Map ())
 
-    import Expression (Op0 (Iota), Op1, Op2)
+    import Expression (
+        EEnvironment,
+        EValue (EArray, EBool, EReal),
+        Expression (EApply, EIf, ELambda, ELet, ELift, EOp0, EOp1, EOp2, ERef),
+        Op0 (Iota),
+        Op1 (Gen, Idx, Neg, Sin, Sum),
+        Op2 (Add, Equ, Gt, Gte, Lt, Lte, Map, Mul, Neq, Sub))
 
-    import Trace (
-        reorderTrace,
-        resolveOp1,
-        resolveOp2,
-        TEnvironment,
-        Trace,
-        Traced (TLift, TOp0, TOp1, TOp2, TMap, TMapV),
-        TValue (TArray, TReal),
-        unliftFloat)
+    -- Type Definitions --
 
+    type FEnvironment = Map String FValue
+
+    type Forward = Map String (Forwarded, Int, FValue)
+    
     data Forwarded
-        = FLift TValue
+        = FLift FValue
         | FOp0  Op0
         | FOp1  Op1       String
         | FOp2  Op2       String String
@@ -30,98 +27,286 @@ module Forward (
         | FMapV Forward   String
         deriving (Show)
 
-    -- Stores an trace augmented with succesors and intermediate values
-    type Forward = Map String (Forwarded, [String], TValue)
+    data FValue
+        = FArray String [Float]
+        | FBool  String Bool
+        | FReal  String Float
+        | FFunc  Bool   (FValue -> Int -> Forward -> (FValue, Forward, Int))
 
-    addSuccessor :: Forward -> String -> String -> Forward
-    addSuccessor f r s = Map.insert r (t, s : ss, v) f
+    instance Show FValue where
+        show :: FValue -> String
+        show (FArray s v) = "(" ++ s ++ " = " ++ show v ++ ")"
+        show (FBool  s v) = "(" ++ s ++ " = " ++ show v ++ ")"
+        show (FReal  s v) = "(" ++ s ++ " = " ++ show v ++ ")"
+        show (FFunc  _ _) = "FFunc"
+    
+    -- Function Definitions --
+    -- Counts a reference in the forward pass
+    addReference :: String -> Forward -> Forward
+    addReference s f = case Map.lookup s f of
+        Just (d, c, v) -> Map.insert s (d, c + 1, v) f
+        Nothing        -> error $ "Reference '" ++ s ++ "' not in forward map"
+
+    -- Checks if a lambda expression has branches or not
+    branchCheck :: FEnvironment -> Expression -> Bool
+    branchCheck n (EApply e1 e2) = branchCheck n e1 || branchCheck n e2
+    branchCheck _ (EIf {})       = True
+    branchCheck n (ELambda s e1) = branchCheck (Map.insert s (FReal s 0) n) e1
+    branchCheck n (ELet s e1 e2) =
+        let b1 = branchCheck n e1
+            b2 = branchCheck (Map.insert s (FReal s 0) n) e2
+        in  b1 || b2
+    branchCheck _ (ELift _)      = False
+    branchCheck _ (EOp0 _)       = False
+    branchCheck n (EOp1 _ e1)    = branchCheck n e1
+    branchCheck n (EOp2 _ e1 e2) = branchCheck n e1 || branchCheck n e2
+    branchCheck n (ERef s1)      =
+        case n Map.! s1 of
+            (FFunc b _ ) -> b
+            _            -> False
+
+    -- Wrapper function for the forward pass
+    -- Takes in: input variables as an environment, a boolean to keep array in trace, the expression to pass over
+    -- Returns: a tuple containing the output value, and the completed forward pass
+    forward :: EEnvironment -> Bool -> Expression -> (FValue, Forward)
+    forward n k e = let (v, f, _) = forward' n' k 0 e f' in (v, f)
         where
-            (t, ss, v) = f Map.! r
+            n' = switchEnv n
+            f' = Map.map lift n'
+            lift v = (FLift v, 0, v)
 
-    -- Performs the forward pass on a trace
-    forward :: Trace -> Forward
-    forward = fst . forward' Map.empty
+    -- Workhorse function for the forward pass
+    -- Takes in: the current environment, a boolean to keep arrays while tracing, a counter for variable names, the current expression, the current forward environment
+    forward' :: FEnvironment -> Bool -> Int -> Expression -> Forward -> (FValue, Forward, Int)
+    forward' n k c (EApply e1 e2) f =
+        let (v1, f1, c1) = forward' n k c  e1 f
+            (v2, f2, c2) = forward' n k c1 e2 f1
+        in  case v1 of
+            FFunc _ a -> a v2 c2 f2
+            _         -> error "Type mismatch in forward'/EApply"
+    
+    forward' n k c (EIf e1 e2 e3) f =
+        let (v1, _, _) = forward' n k c e1 f
+        in  case v1 of
+            FBool _ True  -> forward' n k c e2 f
+            FBool _ False -> forward' n k c e3 f
+            _             -> error "Type mismatch in forward'/EIf"
 
-    forward' :: TEnvironment -> Trace -> (Forward, TValue)
-    forward' _ []              = (Map.empty, TReal "0" 0)
-    forward' n tss@((s, t):ts) = case t of
-        TLift v        -> (Map.insert s (FLift v, [], v) $ fst (forward' (Map.insert s v n) ts), v)
-        TOp0  (Iota i) ->
-            let v = TArray s [0 .. fromIntegral i - 1]
-            in  (Map.insert s (FOp0 (Iota i), [], v) $ fst (forward' (Map.insert s v n) ts), v)
-        TOp1  op s1    ->
-            if   Map.member s1 n
-            then let v1 = n Map.! s1
-                     v  = resolveOp1 op v1 s
-                     f  = Map.insert s (FOp1 op s1, [], v) $ fst (forward' (Map.insert s v n) ts)
-                 in  (addSuccessor f s1 s, v)
-            else forward' n $ reorderTrace tss s1
-        TOp2  op s1 s2 ->
-            if   Map.member s1 n
-            then if   Map.member s2 n
-                 then let v1 = n Map.! s1
-                          v2 = n Map.! s2
-                          v  = resolveOp2 op v1 v2 s
-                          f  = Map.insert s (FOp2 op s1 s2, [], v) $ fst (forward' (Map.insert s v n) ts)
-                      in  (addSuccessor (addSuccessor f s1 s) s2 s, v)
-                 else forward' n $ reorderTrace tss s2
-            else forward' n $ reorderTrace tss s1
-        TMap  rss s1   ->
-            if   Map.member s1 n
-            then let v1       = n Map.! s1
-                     (mv, mt) = forwardMap n rss s v1 0
-                     f        = Map.insert s (FMap mt s1, [], mv) $ fst (forward' (Map.insert s mv n) ts)
-                 in  (addSuccessor f s1 s, mv)
-            else forward' n $ reorderTrace tss s1
-        TMapV rs  s1   ->
-            if   Map.member s1 n
-            then let v1       = n Map.! s1
-                     (mv, mt) = forwardMapV n rs s v1 0
-                     f        = Map.insert s (FMapV mt s1, [], mv) $ fst (forward' (Map.insert s mv n) ts)
-                 in  (addSuccessor f s1 s, mv)
-            else forward' n $ reorderTrace tss s1
+    forward' n k c (ELambda s1 e1) f =
+        let b = branchCheck (Map.insert s1 (FReal s1 0) n) e1
+            u = FFunc b (\x c' f' -> forward' (Map.insert s1 x n) k c' e1 f')
+        in  (u, f, c)
 
-    forwardMap :: TEnvironment -> [Trace] -> String -> TValue -> Int -> (TValue, [Forward])
-    forwardMap _ []     s _                  _ = (TArray s [], [])
-    forwardMap _ _      s (TArray _  [])     _ = (TArray s [], [])
-    forwardMap n (t:ts) s (TArray s' (v:vs)) i =
-        let si       = s' ++ '!' : show i
-            so       = s  ++ '!' : show i
-            (ff, fv) = forward' (Map.insert si (TReal si v) n) t
-            fvs      = getName fv
-            ff'      = renameForward ff fvs so
-            (rv, rf) = forwardMap n ts s (TArray s' vs) (i + 1)
-        in  case rv of
-            TArray _ ns -> (TArray s (unliftFloat fv : ns), ff' : rf)
-            _           -> error "Type mismatch in forwardMap (1)"
-    forwardMap _ _      _ _                  _ = error "Type mismatch in forwardMap (2)"
+    forward' n k c (ELet s1 e1 e2) f =
+        let (v1, f1, c1) = forward' n k c e1 f
+            n'           = Map.insert s1 v1 n
+        in  forward' n' k c1 e2 f1
 
-    forwardMapV :: TEnvironment -> Trace -> String -> TValue -> Int -> (TValue, Forward)
-    forwardMapV _ _ s (TArray _ [])      _ = (TArray s [], Map.empty)
-    forwardMapV n t s (TArray s' (v:vs)) i =
-        let (ff, fv) = forward' (Map.insert s' (TReal s' v) n) t
-            fvs      = getName fv
-            ff'      = renameForward ff fvs s
-            rv       = fst $ forwardMapV n t s (TArray s' vs) (i + 1)
-        in  case rv of
-            TArray _ ns -> (TArray s (unliftFloat fv : ns), ff')
-            _           -> error "Type mismatch in forwardMapV (1)"
-    forwardMapV _ _ _ _                  _ = error "Type mismatch in forwardMapV (2)"
+    forward' _ k c (ELift v1)     f =
+        let s1 = 'r' : show c
+        in  case v1 of
+            (EArray v) ->
+                if   k
+                then (FArray s1 v, Map.insert s1 (FLift (FArray s1 v), 0, FArray s1 v) f, c + 1)
+                else (FArray s1 v, forwardArrayLift s1 0 v f, c + 1)
+            (EBool  v) -> (FBool s1 v, Map.insert s1 (FLift (FBool s1 v), 0, FBool s1 v) f, c + 1)
+            (EReal  v) -> (FReal s1 v, Map.insert s1 (FLift (FReal s1 v), 0, FReal s1 v) f, c + 1)
+            _          -> error "Type mismatch in forward'/ELift"
 
-    getName :: TValue -> String
-    getName (TArray s _) = s
-    getName (TReal  s _) = s
-    getName _            = error "Type mismatch in getName"
+    forward' _ k c (EOp0 (Iota i)) f =
+        let s1 = 'r' : show c
+            v  = FArray s1 [0 .. fromIntegral (i - 1)]
+        in  if   k
+            then (v, Map.insert s1 (FOp0 (Iota i), 0, v) f, c + 1)
+            else (v, forwardArrayLift s1 0 [0 .. fromIntegral (i - 1)] f, c + 1)
 
-    rename :: TValue -> String -> TValue
-    rename (TArray _ v) s = TArray s v
-    rename (TReal  _ v) s = TReal  s v
-    rename _            _ = error "Type mismatch in rename"
+    forward' n k c (EOp1 op e1)    f =
+        let (v1, f1, c1) = forward' n k c e1 f
+            s = 'r' : show c1
+        in  case (op, v1) of
+            (Gen i, FFunc  b  g) ->
+                let v' = [0 .. fromIntegral (i - 1)]
+                    v  = FArray s v'
+                    s' = 'r' : show (c1 + 1)
+                in  if   k
+                    then let f2 = Map.insert s (FOp0 (Iota i), 1, v) f1 -- Start with reference counter at 1, because it is referenced by the map operation
+                         in  if   b
+                             then let (vs, fs, cs) = forwardMapFull g (c1 + 2) s s' v' 0 f2
+                                  in  (vs, Map.insert s' (FMap fs s, 0, vs) f2, cs)
+                             else let (vs, fs, cs) = forwardMapVect g (c1 + 2) s s' v' 0 f2
+                                  in  (vs, Map.insert s' (FMapV fs s, 0, vs) f2, cs)
+                    else let f2 = forwardArrayLift s 0 v' f1
+                         in  forwardMap g (c1 + 2) s s' v' 0 f2 
+            (Idx i, FArray s1 a) ->
+                if   k
+                then (FReal s $ a !! i, addReference s1 $ Map.insert s (FOp1 op s1, 0, FReal s $ a !! i) f1, c1 + 1)
+                else let s' = s1 ++ '!' : show i
+                     in  (FReal s' $ a !! i, f1, c1)
+            (Neg,   FBool  s1 a) -> (FBool s $ not a, addReference s1 $ Map.insert s (FOp1 Neg s1, 0, FBool s $ not a) f1, c1 + 1)
+            (Sin,   FReal  s1 a) -> (FReal s $ sin a, addReference s1 $ Map.insert s (FOp1 Sin s1, 0, FReal s $ sin a) f1, c1 + 1)
+            (Sum,   FArray s1 a) ->
+                if   k
+                then (FReal s $ sum a, addReference s1 $ Map.insert s (FOp1 op s1, 0, FReal s $ sum a) f1, c1 + 1)
+                else forwardArraySum s1 c1 a f1
+            _                    -> error "Type mismatch in forward'/EOp1"
 
-    renameForward :: Forward -> String -> String -> Forward
-    renameForward fs old new =
-        if   Map.member old fs
-        then let (f, ss, v) = fs Map.! old
-                 v'         = rename v new
-             in  Map.insert new (f, ss, v') $ Map.delete old fs
-        else fs
+    forward' n k c (EOp2 op e1 e2) f =
+        let (v1, f1, c1) = forward' n k c  e1 f
+            (v2, f2, c2) = forward' n k c1 e2 f1
+            s = 'r' : show c2
+        in  case (op, v1, v2) of
+            (Add, FReal s1 a, FReal  s2 b) ->
+                let v = FReal s $ a + b
+                in  (v, addReference s1 (addReference s2 (Map.insert s (FOp2 op s1 s2, 0, v) f2)), c2 + 1)
+            (Equ, FBool s1 a, FBool  s2 b) ->
+                let v = FBool s $ a == b
+                in  (v, addReference s1 (addReference s2 (Map.insert s (FOp2 op s1 s2, 0, v) f2)), c2 + 1)
+            (Equ, FReal s1 a, FReal  s2 b) ->
+                let v = FBool s $ a == b
+                in  (v, addReference s1 (addReference s2 (Map.insert s (FOp2 op s1 s2, 0, v) f2)), c2 + 1)
+            (Gt,  FReal s1 a, FReal  s2 b) ->
+                let v = FBool s $ a > b
+                in  (v, addReference s1 (addReference s2 (Map.insert s (FOp2 op s1 s2, 0, v) f2)), c2 + 1)
+            (Gte, FReal s1 a, FReal  s2 b) ->
+                let v = FBool s $ a >= b
+                in  (v, addReference s1 (addReference s2 (Map.insert s (FOp2 op s1 s2, 0, v) f2)), c2 + 1)
+            (Lt,  FReal s1 a, FReal  s2 b) ->
+                let v = FBool s $ a < b
+                in  (v, addReference s1 (addReference s2 (Map.insert s (FOp2 op s1 s2, 0, v) f2)), c2 + 1)
+            (Lte, FReal s1 a, FReal  s2 b) ->
+                let v = FBool s $ a <= b
+                in  (v, addReference s1 (addReference s2 (Map.insert s (FOp2 op s1 s2, 0, v) f2)), c2 + 1)
+            (Map, FFunc b g, FArray s2 v') ->
+                if   k
+                then if   b
+                     then let (vs, fs, cs) = forwardMapFull g (c1 + 2) s2 s v' 0 f2
+                          in  (vs, Map.insert s (FMap fs s2, 0, vs) f2, cs)
+                     else let (vs, fs, cs) = forwardMapVect g (c1 + 2) s2 s v' 0 f2
+                          in  (vs, Map.insert s (FMapV fs s2, 0, vs) f2, cs)
+                else forwardMap g (c1 + 2) s2 s v' 0 f2
+            (Mul, FReal s1 a, FReal  s2 b) ->
+                let v = FReal s $ a * b
+                in  (v, addReference s1 (addReference s2 (Map.insert s (FOp2 op s1 s2, 0, v) f2)), c2 + 1)
+            (Neq, FBool s1 a, FBool  s2 b) ->
+                let v = FBool s $ a == b
+                in  (v, addReference s1 (addReference s2 (Map.insert s (FOp2 op s1 s2, 0, v) f2)), c2 + 1)
+            (Neq, FReal s1 a, FReal  s2 b) ->
+                let v = FBool s $ a == b
+                in  (v, addReference s1 (addReference s2 (Map.insert s (FOp2 op s1 s2, 0, v) f2)), c2 + 1)
+            (Sub, FReal s1 a, FReal  s2 b) ->
+                let v = FReal s $ a - b
+                in  (v, addReference s1 (addReference s2 (Map.insert s (FOp2 op s1 s2, 0, v) f2)), c2 + 1)
+            _                              -> error "Type mismatch in forward'/EOp2"
+
+    forward' n _ c (ERef s) f = (n Map.! s, f, c)
+
+    -- Creates a sum of all values in an array
+    -- This function does empty or singleton arrays, or passes it on to forwardArraySum'
+    forwardArraySum :: String -> Int -> [Float] -> Forward -> (FValue, Forward, Int)
+    forwardArraySum _ c [] f =
+        let s = 'r' : show c
+        in  (FReal s 0, f, c + 1)
+    
+    forwardArraySum s c [v] f =
+        let s' = s ++ "!0"
+        in  (FReal s' v, f, c)
+
+    forwardArraySum s c (x:y:vs) f =
+        let sx = s ++ "!0"
+            sy = s ++ "!1"
+            s' = 'r' : show c
+            f' = Map.insert s' (FOp2 Add sx sy, 0, FReal s' $ x + y) f
+        in  forwardArraySum' s (c + 1) vs 2 (FReal s' $ x + y) (addReference sx (addReference sy f'))
+
+    -- Creates a sum of all values in an array, does most of the work when called by forwardArraySum
+    forwardArraySum' :: String -> Int -> [Float] -> Int -> FValue -> Forward -> (FValue, Forward, Int)
+    forwardArraySum' _ c [] _ a f = (a, f, c)
+    
+    forwardArraySum' s c (v:vs) i (FReal sa va) f =
+        let s'  = s ++ '!' : show i
+            sa' = 'r' : show c
+            va' = va + v
+            f'  = Map.insert sa' (FOp2 Add sa s', 0, FReal sa' va') (addReference sa (addReference s' f))
+        in  forwardArraySum' s (c + 1) vs (i + 1) (FReal sa' va') f'
+
+    forwardArraySum' _ _ (_:_) _ _ _ = error "Type mismatch in forwardArraySum'"
+
+    -- Lifts all values in an array seperately for the forward-trace
+    forwardArrayLift :: String -> Int -> [Float] -> Forward -> Forward
+    forwardArrayLift _ _ []     f = f
+    forwardArrayLift s c (v:vs) f =
+        let s1 = s ++ '!' : show c
+            v' = FReal s1 v
+            f' = Map.insert s1 (FLift v', 0, v') f
+        in  forwardArrayLift s (c + 1) vs f'
+
+    -- Performs tracing and caculations of a mapping operations, but whilst tracing away array structure
+    -- Takes in: the function to map, the current name counter, the name of the old array, the name of the new array,
+    --   the float contents of the array, the current index, and the current forward map
+    -- Returns: a tuple containing the resulting array, forward map, and name counter
+    forwardMap :: (FValue -> Int -> Forward -> (FValue, Forward, Int)) -> Int -> String -> String -> [Float] -> Int -> Forward -> (FValue, Forward, Int)
+    forwardMap _  c _  sn []     _ f = (FArray sn [], f, c)
+    forwardMap fn c so sn (x:xs) i f =
+        let sox = so ++ '!' : show i
+            snx = sn ++ '!' : show i
+            v   = FReal sox x
+            (xv,  xf,  xc)  = fn v c f
+            (xsv, xsf, xsc) = forwardMap fn xc so sn xs (i + 1) xf
+        in  case (xv, xsv) of
+            (FReal s' v', FArray _ vs) -> (FArray sn (v' : vs), rename s' snx xsf, xsc)
+            _                          -> error "Type mismatch in forwardMap"
+
+    -- Calculates values for all items in a mapping operation, but traces only the first one
+    -- Takes in: the function to map, the current name counter, the name of the old array, the name of the new array,
+    --   the float contents of the array, the current index, and the current forward map
+    -- Returns: a tuple containting the value, the resulting forward map, and the new name counter
+    forwardMapVect :: (FValue -> Int -> Forward -> (FValue, Forward, Int)) -> Int -> String -> String -> [Float] -> Int -> Forward -> (FValue, Forward, Int)
+    forwardMapVect _  c _  sn []     _ _ = (FArray sn [], Map.empty, c)
+    forwardMapVect fn c so sn (x:xs) i f =
+        if   i == 0
+        then let sox = so ++ "!i"
+                 snx = sn ++ "!i"
+                 v   = FReal sox x
+                 (xv,  xf, xc)  = fn v c (Map.insert sox (FLift v, 0, v) f)
+                 (xsv, _,  xsc) = forwardMapVect fn xc so sn xs (i + 1) f
+             in  case (xv, xsv) of
+                 (FReal s' v', FArray _ vs) -> (FArray sn (v' : vs), rename s' snx xf, xsc)
+                 _                         -> error "Type mismatch in forwardMapVect (1)"
+        else let sox = so ++ "!i"
+                 v   = FReal sox x
+                 (xv,  _,   xc)  = fn v c (Map.insert sox (FLift v, 0, v) f)
+                 (xsv, xsf, xsc) = forwardMapVect fn xc so sn xs (i + 1) f
+             in  case (xv, xsv) of
+                 (FReal _ v', FArray _ vs) -> (FArray sn (v' : vs), xsf, xsc)
+                 _                        -> error "Type mismatch in forwardMapVect (2)"
+
+    -- Traces and calculates (intermediate) values for all steps in a mapping operation
+    -- Takes in: the function to map, the current name counter, the name of the old array, the name of the new array,
+    --   the float contents of the array, the current index, and the current forward map
+    -- Returns: a tuple containing the value, the resulting forward map, and the new name counter
+    forwardMapFull :: (FValue -> Int -> Forward -> (FValue, Forward, Int)) -> Int -> String -> String -> [Float] -> Int -> Forward -> (FValue, [Forward], Int)
+    forwardMapFull _  c _  sn []     _ _ = (FArray sn [], [], c)
+    forwardMapFull fn c so sn (x:xs) i f =
+        let sox             = so ++ '!' : show i
+            snx             = sn ++ '!' : show i
+            v               = FReal sox x
+            (xv,  xf,  xc)  = fn v c (Map.insert sox (FLift v, 0, v) f)
+            (xsv, xsf, xsc) = forwardMapFull fn xc so sn xs (i + 1) xf
+        in  case (xv, xsv) of
+            (FReal s' v', FArray _ vs) -> (FArray sn (v' : vs), rename s' snx xf : xsf, xsc)
+            _                          -> error "Type mismatch in forwardMapFull"
+
+    -- Renames an item in the forward-trace
+    rename :: String -> String -> Forward -> Forward
+    rename so sn f = case Map.lookup so f of 
+        Just v  -> Map.insert sn v (Map.delete so f)
+        Nothing -> f
+
+    -- Takes in the input variables as an EEnvironment, and creates an FEnvironment for the forward pass
+    switchEnv :: EEnvironment -> FEnvironment
+    switchEnv = Map.mapWithKey switch
+        where
+            switch k (EArray e) = FArray k e
+            switch k (EBool  e) = FBool  k e
+            switch k (EReal  e) = FReal  k e
+            switch _ _          = error "Function in starting environment"
