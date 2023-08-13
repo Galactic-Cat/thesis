@@ -1,5 +1,6 @@
+\clearpage
 \section{Automatic Differentiation} \label{sec:ad}
-    Tracing is useful in many application, one of which is automatic Differentiation (AD).
+    Tracing is useful in many applications, one of which is Automatic Differentiation (AD).
     Recall how in AD we wish to calculate the derivative of a computer program.
     To do this (in reverse-mode) we wish to calculate the adjoints for the inputs.
     However, to calculate these adjoints, we would first need to calculate the adjoints for the individual computational steps in the program that contribute to an input's sensitivity.
@@ -92,19 +93,19 @@
         \end{aligned}
     \end{equation}
 
-    We can see the ancestors of $r_1$ by looking at the trace, where we find $x_1$ and $x_2$.
+    We can again find the ancestors of $r_1$ by looking at the trace, where we find $x_1$ and $x_2$.
     Let us look at $x_2$ first.
     $\bar{x_2}$ is dependent on $\bar{r_1}$, which we just calculated, but rather than an addition (like $r_2$), $r_1$ is a multiplication.
     We mentioned in Section \ref{sec:bg_ad}, in Equation \ref{eq:dualnumbers}, how the derivative of a multiplication uses both the primal part and the derivative part of a number.
     To get $\bar{x_2}$ we realize (as is visible in Equation \ref{eq:reverse_ex2} as well), that we need the primal value of $x_1$.
     We mentioned before we needed the intermediate values, and this is why.
     Multiplication is not the only operation that requires a primal component, but it is a prime example.
-    We see in Equation \ref{eq:reverse_mul} how this adjoint resolves to use the primal component $x_2$.
+    We see in Equation \ref{eq:reverse_mul} how this adjoint resolves to use the primal component $x_1$.
     \begin{equation} \label{eq:reverse_mul}
         \begin{aligned}
-            \bar{x_1}&=\bar{r_1}\cdot\frac{\partial r_1}{\partial x_1}\\
-            &=\bar{r_1}\cdot\frac{\partial(x_1x_2)}{\partial x_1}\\
-            &=\bar{r_1}\cdot x_2
+            \bar{x_2}&=\bar{r_1}\cdot\frac{\partial r_1}{\partial x_2}\\
+            &=\bar{r_1}\cdot\frac{\partial(x_1x_2)}{\partial x_2}\\
+            &=\bar{r_1}\cdot x_1
         \end{aligned}
     \end{equation}
 
@@ -120,7 +121,7 @@
     This then also bring us neatly to our next conundrum: what if a variable is used multiple times.
     In the example, this goes for $x_1$, something that we have ignored until now.
     The mathematical solution is simple: the partial derivative of a variable that is used multiple times, is just a summation of the adjoints arising from those uses.
-    We see this in Equation \ref{eq:reverse_ex2}, where $\bar{x_1}$ is calculated by adding the influence to $r_1$ and the influence to $r_2$ together.
+    We see this in Equation \ref{eq:reverse_ex2}, where $\bar{x_1}$ is calculated by adding the influence from $r_1$ and the influence from $r_2$ together.
     However, implementation-wise this can be a bit of a hurdle.
 
     As mentioned, the trace is not in any order.
@@ -162,7 +163,7 @@
 
     \subsection{The Reverse Pass}
         As discussed, to facilitate our reverse pass we need both the reference counting and intermediate values.
-        Now let us define a function \texttt{reverse} that makes the reverse pass.
+        Now let us define a function \texttt{reverse} that does the reverse pass.
         This reverse pass should find all the adjoints in the program.
         So, it should take in an object of the \texttt{Forward} type and output a map containing the adjoints.
         In Listing \ref{lst:reverse_def} we define constructors for adjoints: one for arrays, one for sparse arrays (represented by a single index and the associated value), one for real values, and a ``null'' value we can use as a placeholder.
@@ -233,7 +234,7 @@
         The reverse pass over an addition operation is very simple: the adjoint of the variables that are added together are equal to the adjoint of the sum.
         Now when we extend this to our array, we see that the (partial) adjoint of the array that is summed, is just an array with the adjoint of the sum for every item in array.
 
-        \begin{haskell}[caption={Function for seeding ancestors of a node. \texttt{seedAncestors} takes in the forward-pass trace, the current reverse-pass map, the name of the item to seed the ancestors of, and the adjoint of that item to seed its ancestors with; and outputs a tuple containing an updated reverse-pass, and a list of strings of items to evaluate to add to the reverse-pass queue.}, label=lst:seedanc, gobble=12]
+        \begin{haskell}[caption={Function for seeding ancestors of a node. \texttt{seedAncestors} takes in the forward-pass trace, the current reverse pass map, the name of the item to seed the ancestors of, and the adjoint of that item to seed its ancestors with; and outputs a tuple containing an updated reverse pass, and a list of strings of items to evaluate to add to the reverse pass queue.}, label=lst:seedanc, gobble=12]
             seedAncestors :: Forward -> Reverse -> String -> Adjoint -> (Reverse, [String])
             seedAncestors t r s a = case traced of
                 FLift _        -> (r, [])
@@ -307,17 +308,18 @@
         Examine the computational graph in Figure \ref{fig:map_graph}, where we map a simple addition over an array.
         In this figure, the map is displayed as a box, because in our trace maps are stored as separate sub-traces.
         This might seem a little silly for a simple addition, but since maps can take any function (within the bounds of the DSL), we need to account for more complicated functions as well (e.g. including control flow, etc.)
-        Furthermore, highlighting the map as a box or context on its own highlights and interesting property: this context can access the parent context (the whole program).
-        While it might be tempting to just run our existing reverse-pass functions on these sub-traces, we would still need to gather the adjoints into a single adjoint array as the adjoint for the original array.
+        Furthermore, highlighting the map as a box or context on its own highlights and interesting property: this context may access variables in the wider context.
+        We also need to consider the adjoints for these variables in the ``closure'' of the function.
+        While it might be tempting to just run our existing reverse pass functions on these sub-traces, we would still need to gather the adjoints into a single adjoint array as the adjoint for the original array.
         Furthermore, it starts to become muddy what to do with variables that are used by the map, but are not contained within it, like $a$ in Figure \ref{fig:map_graph}.
-        We also do not want our reverse-pass to start leaking out of the map operation: in Figure \ref{fig:map_graph}, this would happen if we accidentally continued our reverse pas for $a$, while that is actually out of scope of our map operation, and should be done by the overarching reverse pass.
-        Which leads us to another problem: what if a variable is only used in the context of a map (again like $a$ in Figure \ref{fig:map_graph}), if we do not follow it up within the reverse pass in the map, we need to add it to the queue of the overarching reverse pass.
+        We also do not want our reverse pass to start leaking out of the map operation: in Figure \ref{fig:map_graph}, this would happen if we accidentally continued our reverse pass for $a$, while that is actually out of scope of our map operation, and should be done by the main reverse pass.
+        Which leads us to another problem: what if a variable is only used in the context of a map (again like $a$ in Figure \ref{fig:map_graph}), if we do not follow it up within the reverse pass in the map, we need to add it to the queue of the main reverse pass.
         In Figure \ref{fig:map_graph}, $a$ is an informal ancestor of the map operation, one that is not immediately obvious (especially not in more complex mapped functions).
         
         All this is why, in Listing \ref{lst:rev_maps}, we introduce the \texttt{seedMap} function, that is specifically made for continuing the reverse pass within a map.
-        It uses \texttt{seedAncestors} to still calculate and pass the adjoints within our map, but it makes sure only the straight-line function of a single item in the map is explored, any other variables that are used in the map trace are given their adjoints, but not explored: they are instead stored and added to the overarching reverse pass' queue.
-        It might be important to reiterate here that since these traces are single-line programs, and due to the nature of functional programming, only one ancestor of any action is within the context of the sub-trace, while all others should be from the overarching context.
-        Other items in the array that is mapped over are also considered in the overarching context, since the sub-traces only traces the map over a single item.
+        It uses \texttt{seedAncestors} to still calculate and pass the adjoints within our map, but it makes sure only the straight-line function of a single item in the map is explored, any other variables that are used in the map trace are given their adjoints, but not explored: they are instead stored and added to the main reverse pass' queue.
+        It might be important to reiterate here that since these traces are single-line programs, and due to the nature of functional programming, only one ancestor of any action is within the context of the sub-trace, while all others should be from the main context.
+        Other items in the array that is mapped over are also considered in the main context, since the sub-traces only traces the map over a single item.
         Very important is also that intermediate values in this context cannot escape this context in any ways.
         They can not be used by other parts of the program, as they are all locked away in the map operation.
         (If this were possible, it would violate the functional nature of the program.)
@@ -368,8 +370,7 @@
         \end{haskell}
 
         For vectorized maps (\texttt{FMapV} in the forward pass) the process is very similar, however we now use the single sub-trace to calculate the adjoints.
-        Since the essence of the vectorization means that all items in the array follow the same path, we can calculate the adjoint for each item at the same time.
-        % TODO: Expand this with code
+        Since the essence of the vectorization means that all items in the array follow the same path, we can calculate the adjoint for each item at the same time using data parallelism.
 
         We mentioned transforming and combining adjoints briefly before, but it is something we should look into further.
         First off, as mentioned before, adjoints of real numbers need to be real numbers, and adjoints of arrays need to be arrays as well.
