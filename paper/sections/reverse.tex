@@ -46,16 +46,16 @@
     \begin{equation} \label{eq:reverse_ex}
         \begin{aligned}
             \frac{df}{d\vec{x}}=\nabla f&=\begin{bmatrix}
-                \frac{\partial f}{\partial x_1}\bigr|_{r_2}\\
-                \frac{\partial f}{\partial x_2}\bigr|_{r_2}
+                \frac{\partial r_2(x_1,r_1)}{\partial x_1}\\
+                \frac{\partial r_2(x_1,r_1)}{\partial x_2}
             \end{bmatrix}\tran\\
             &=\begin{bmatrix}
-                \frac{\partial f}{\partial r_1}\bigr|_{x_1\cdot x_2}\cdot\frac{\partial r_1}{\partial x_1}\bigr|_{x_1}+\frac{\partial f}{\partial r_2}\bigr|_{x_1+r_1}\cdot\frac{\partial r_2}{\partial x_1}\bigr|_{x_1}\\
-                \frac{\partial f}{\partial r_1}\bigr|_{x_1\cdot x_2}\cdot\frac{\partial r_1}{\partial x_2}\bigr|_{x_2}
+                1+\frac{\partial r_2(x_1,r_1)}{\partial r_1}\cdot\frac{\partial r_1(x_1,x_2)}{\partial x_1}\\
+                0+\frac{\partial r_2(x_1,r_1)}{\partial r_1}\cdot\frac{\partial r_1(x_1,x_2)}{\partial x_2}
             \end{bmatrix}\tran\\
             &=\begin{bmatrix}
-                \left(\frac{\partial f}{\partial r_2}\bigr|_{x_1+r_1}\cdot\frac{\partial r_2}{\partial r_1}\bigr|_{x_1\cdot x_2}\right)\cdot\frac{\partial r_1}{\partial x_1}\bigr|_{x_1}+\frac{\partial f}{\partial r_2}\bigr|_{x_1+r_1}\cdot\frac{\partial r_2}{\partial x_1}\bigr|_{x_1}\\
-                \left(\frac{\partial f}{\partial r_2}\bigr|_{x_1+r_1}\cdot\frac{\partial r_2}{\partial r_1}\bigr|_{x_1\cdot x_2}\right)\cdot\frac{\partial r_1}{\partial x_2}\bigr|_{x_2}
+                1+\partial x_1\cdot x_2\\
+                \partial x_2\cdot x_1
             \end{bmatrix}\tran
         \end{aligned}
     \end{equation}
