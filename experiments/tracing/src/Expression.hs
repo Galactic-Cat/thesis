@@ -8,12 +8,14 @@ module Expression (
         EOp0,
         EOp1,
         EOp2,
+        EOp3,
         ERef
     ),
     EValue (EArray, EBool, EReal),
     Op0 (Iota),
     Op1 (Gen, Idx, Neg, Sin, Sum),
     Op2 (Add, Equ, Gt, Gte, Lt, Lte, Map, Mul, Neq, Sub),
+    Op3 (Fold),
     EEnvironment,
     eval
 ) where
@@ -29,6 +31,7 @@ module Expression (
         | EOp0    Op0
         | EOp1    Op1        Expression
         | EOp2    Op2        Expression Expression
+        | EOp3    Op3        Expression Expression Expression
         | ERef    String
         deriving (Show)
 
@@ -45,6 +48,8 @@ module Expression (
     data Op1 = Gen Int | Idx Int | Neg | Sin | Sum
         deriving (Show)
     data Op2 = Add | Equ | Gt | Gte | Lt | Lte | Map | Mul | Neq | Sub
+        deriving (Show)
+    data Op3 = Fold
         deriving (Show)
 
     type EEnvironment = Map String EValue
@@ -95,9 +100,24 @@ module Expression (
             (Neq, EBool a, EBool  b) -> EBool  $ a /= b
             (Neq, EReal a, EReal  b) -> EBool  $ a /= b
             (Sub, EReal a, EReal  b) -> EReal  $ a -  b
-            _                         -> error "Type mismatch in eval/EOp2"
+            _                        -> error "Type mismatch in eval/EOp2"
+    eval n (EOp3     Fold e1 e2 e3) =
+        let v1 = eval n e1
+            v2 = eval n e2
+            v3 = eval n e3
+        in  case (v1, v2, v3) of
+            (EFunc a, EArray b, EReal c) -> evalFold a b c
+            _                            -> error "Type mismatch in eval/EOp3"
     eval n (ERef     s1)       = n Map.! s1
 
     unliftFloat :: EValue -> Float
     unliftFloat (EReal v) = v
-    unliftFloat _          = error "Type mismatch in unliftFloat"
+    unliftFloat _         = error "Type mismatch in unliftFloat"
+
+    unliftFunc :: EValue -> (EValue -> EValue)
+    unliftFunc (EFunc f) = f
+    unliftFunc _         = error "Type mismatch in unliftFunc"
+
+    evalFold :: (EValue -> EValue) -> [Float] -> Float -> EValue
+    evalFold _ []     z = EReal z
+    evalFold f (x:xs) z = evalFold f xs $ unliftFloat (unliftFunc (f (EReal x)) (EReal z))

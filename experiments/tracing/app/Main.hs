@@ -1,9 +1,9 @@
 module Main (main) where
     import Expression (
-        Expression (ELet, EIf, ELambda, EOp0, EOp1, EOp2, ERef),
+        Expression (ELet, ELambda, EOp0, EOp1, EOp2, ERef),
         Op0 (Iota),
         Op1 (Sum),
-        Op2 (Add, Map, Mul),
+        Op2 (Map, Mul),
         EValue (EReal, EBool),
         EEnvironment,
         eval)
