@@ -3,16 +3,16 @@ import Expression
       EValue(EArray, EBool, EReal),
       Expression(ERef, ELambda, EOp0, ELet, EOp2, EOp1, EOp3, ELift, EIf),
       Op0(Iota),
-      Op1(Sum),
+      Op1(Sum, Sin),
       Op2(Map, Mul, Add),
       Op3(Fold))
 import Forward (forward, purge, getName)
+import Reverse (reverse, Adjoint (AReal))
 import qualified Data.Map.Strict as Map
-import Prelude hiding (exp)
+import Prelude hiding (exp, reverse)
 
 main :: IO ()
 main = do
-    putStrLn "Running 3 tests"
     putStrLn "[ Test Start ] Test 1 | Array vectorized map with input closure\n"
     _ <- testMapWithInputClosure
     putStrLn "\n[  Test End  ]\n"
@@ -25,6 +25,9 @@ main = do
     -- putStrLn "[ Test Start ] Test 4 | Forward purging\n"
     -- _ <- testForwardPurge
     -- putStrLn "\n[  Test End  ]\n"
+    putStrLn "[ Test Start ] Test 5 | Simple Reverse\n"
+    _ <- testReverse
+    putStrLn "\n[  Test End  ]\n"
 
 testMapWithInputClosure :: IO ()
 testMapWithInputClosure = 
@@ -105,7 +108,6 @@ testFoldProduct =
         print fw2
         putStrLn "\n>> Forward 2 passed"
 
--- TODO: Look over purge function again, it's not working
 testForwardPurge :: IO ()
 testForwardPurge =
     do
@@ -125,3 +127,25 @@ testForwardPurge =
         let cln = (fwv, purge fwf (getName fwv))
         print cln
         putStrLn "\n>> Purge passed"
+
+testReverse :: IO ()
+testReverse =
+    do
+        let exp = ELet "w3"
+                (EOp2 Mul (ERef "x1") (ERef "x2")) 
+                (ELet "w4"
+                    (EOp1 Sin (ERef "x1"))
+                    (EOp2 Add (ERef "w3") (ERef "w4")))
+        let inp = Map.fromList [("x1", EReal 3.0), ("x2", EReal 5.0)]
+        let fw1 = forward inp True exp
+        print fw1
+        putStrLn "\n>> Forward 1 passed\n"
+        let fw2 = forward inp False exp
+        print fw2
+        putStrLn "\n>> Forward 2 passed\n"
+        let rv1 = reverse (snd fw1) (getName $ fst fw1) (AReal 1.0)
+        print rv1
+        putStrLn "\n>> Reverse 1 passed\n"
+        let rv2 = reverse (snd fw2) (getName $ fst fw2) (AReal 1.0)
+        print rv2
+        putStrLn "\n>> Reverse 2 passed"

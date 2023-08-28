@@ -1,6 +1,6 @@
 {-# LANGUAGE InstanceSigs #-}
 
-module Forward (forward, purge, getName, Forward, Forwarded (FLift, FOp0, FOp1, FOp2, FMap, FMapV, FFold, FFoldV), FValue (FArray, FBool, FReal, FFunc)) where
+module Forward (forward, purge, getName, Forward, Forwarded (FLift, FOp0, FOp1, FOp2, FMap, FMapV, FFold, FFoldV, FJoin), FValue (FArray, FBool, FReal, FFunc)) where
     import qualified Data.Map.Strict as Map
     import Data.Map (Map ())
 
@@ -23,11 +23,12 @@ module Forward (forward, purge, getName, Forward, Forwarded (FLift, FOp0, FOp1, 
         = FLift  FValue
         | FOp0   Op0
         | FOp1   Op1       String
-        | FOp2   Op2       String  String
+        | FOp2   Op2       String String
         | FMap   [Forward] String
         | FMapV  Forward   String
-        | FFold  Forward   String  String
-        | FFoldV Forward   Forward String String
+        | FFold  Forward   String String
+        | FFoldV Forward   String Forward String String
+        | FJoin  [String] -- Special statement for FFoldV
         deriving (Show)
 
     data FValue
@@ -224,10 +225,10 @@ module Forward (forward, purge, getName, Forward, Forwarded (FLift, FOp0, FOp1, 
                      then let (vf, ff, cf) = forwardFoldFull (foldFunction fn) c3 s2 v3 a 0 f3
                               uf = updateSubtraceRefs f3 ff s2 s3 -- Update counters from inside the subtrace
                           in  (vf, Map.insert (getName vf) (FFold ff s2 s3, 0, vf) (addReference s2 (addReference s3 uf)), cf)
-                     else let (vf, ff1, ff2, cf) = forwardFoldVect (foldFunction fn) c3 s2 v3 a f3
+                     else let (vf, ff1, q, ff2, cf) = forwardFoldVect (foldFunction fn) c3 s2 v3 a f3
                               uf1 = updateSubtraceRefs f3 ff1 s2 s3 -- Update counters from inside the subtrace
                               uf2 = updateSubtraceRefs uf1 ff2 s2 s3
-                          in  (vf, Map.insert (getName vf) (FFoldV ff1 ff2 s2 s3, 0, vf) (addReference s2 (addReference s3 uf2)), cf)
+                          in  (vf, Map.insert (getName vf) (FFoldV ff1 q ff2 s2 s3, 0, vf) (addReference s2 (addReference s3 uf2)), cf)
                 else forwardFoldFull (foldFunction fn) c3 s2 v3 a 0 f3
             _                                    -> error "Type mismatch in forward'/EOp3"
 
@@ -302,21 +303,21 @@ module Forward (forward, purge, getName, Forward, Forwarded (FLift, FOp0, FOp1, 
     -- Takes in: the folding function, the current name counter, the name of the original array, the identity value,
     --   the float contents of the array, and the current forward map
     -- Returns: a tuple containing the resulting value, the forward maps for the data parallel parts, the forward map for the combination, and name counter
-    forwardFoldVect :: (FValue -> FValue -> Int -> Forward -> (FValue, Forward, Int)) -> Int -> String -> FValue -> [Float] -> Forward -> (FValue, Forward, Forward, Int)
+    forwardFoldVect :: (FValue -> FValue -> Int -> Forward -> (FValue, Forward, Int)) -> Int -> String -> FValue -> [Float] -> Forward -> (FValue, Forward, String, Forward, Int)
     forwardFoldVect fn c sa z xs f
         | len < vectorizedFoldThreads =
             let (vxs, fxs, cxs) = forwardFoldFull fn c sa z xs 0 f
                 fxs' = Map.singleton (getName vxs) (FFold fxs sa (getName z), 0, vxs)
-            in  (vxs, fxs', Map.empty, cxs)
+            in  (vxs, fxs', "", Map.empty, cxs)
         | len < (vectorizedFoldThreads * 2) = controller (len `div` 2) 0 c Map.empty xs
         | otherwise = controller vectorizedFoldThreads 0 c Map.empty xs
         where
             len = length xs + 1
-            controller :: Int -> Int -> Int -> Forward -> [Float] -> (FValue, Forward, Forward, Int)
+            controller :: Int -> Int -> Int -> Forward -> [Float] -> (FValue, Forward, String, Forward, Int)
             controller 0 _ c' fs vs =
                 let s = 'r' : show c'
-                    (vc, fc, cc) = forwardFoldFull fn (c' + 1) s (FReal (s ++ "!0") (head vs)) (tail vs) 1 $ Map.insert s (FLift (FArray s vs), 1, FArray s vs) f
-                in  (vc, fs, fc, cc)
+                    (vc, fc, cc) = forwardFoldFull fn (c' + 1) s (FReal (s ++ "!0") (head vs)) (tail vs) 1 $ Map.insert s (FJoin (Map.keys fs), 0, FArray s vs) f
+                in  (vc, fs, s, fc, cc)
             controller t s c' fs vs
                 | mod (len - s) t == 0 =
                     if   s == 0
@@ -476,14 +477,15 @@ module Forward (forward, purge, getName, Forward, Forwarded (FLift, FOp0, FOp1, 
                     Just (f', cm, v') -> (Map.insert k (f', cm + cs, v') f, v)
                     Nothing           -> (f, v) -- Only update items if they are already in the main trace
 
+    -- FIXME: PUrge is still not working properly
     purge :: Forward -> String -> Forward
     purge f s = 
         let (keep, f1) = Map.mapAccumWithKey check [s] f
         in  select keep f1
         where
             select :: [String] -> Forward -> Forward
-            select []     f' = f'
-            select (g:gs) f' = select gs $ Map.insert g (f Map.! g) f'
+            select []     _  = Map.empty
+            select (k:ks) f' = Map.insert k (f' Map.! k) $ select ks f'
 
             check :: [String] -> String -> (Forwarded, Int, FValue) -> ([String], (Forwarded, Int, FValue))
             check ks _ v@(_,                0, _) = (ks,     v)
@@ -492,7 +494,7 @@ module Forward (forward, purge, getName, Forward, Forwarded (FLift, FOp0, FOp1, 
                     purgeMap :: [Forward] -> Int -> [Forward]
                     purgeMap []       _ = []
                     purgeMap (f':fs') i = purge f' (a ++ '!' : show i) : purgeMap fs' (i + 1)
-            check ks k   (FMapV  f' a,      c, v) = (k : ks, (FMapV  (purge f' (a ++ "!i")) a, c, v))
-            check ks k   (FFold  f' a b,    c, v) = (k : ks, (FFold  (purge f' k) a b, c, v))
-            check ks k   (FFoldV f' g' a b, c, v) = (k : ks, (FFoldV (purge f' "") (purge g' k) a b, c, v))
-            check ks k v                          = (k : ks, v)
+            check ks k   (FMapV  f' a,      c, v)   = (k : ks, (FMapV  (purge f' (a ++ "!i")) a, c, v))
+            check ks k   (FFold  f' a b,    c, v)   = (k : ks, (FFold  (purge f' k) a b, c, v))
+            check ks k   (FFoldV f' q g' a b, c, v) = (k : ks, (FFoldV (purge f' "") q (purge g' k) a b, c, v))
+            check ks k v                            = (k : ks, v)

@@ -1,193 +1,168 @@
-{-# OPTIONS_GHC -Wno-unused-imports -Wno-incomplete-patterns #-}
+{-# LANGUAGE InstanceSigs #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
-module Reverse (reverse) where
-    import Prelude hiding (reverse)    
+module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
+    import Prelude hiding (reverse)
     import qualified Data.Map.Strict as Map
     import Data.Map (Map ())
-    import Data.List (sort)
+    import Expression (Op1 (Idx, Sin, Sum), Op2 (Add, Mul, Sub))
+    import Forward (Forward, Forwarded (FOp1, FOp2, FMap, FMapV, FFold, FFoldV, FJoin), FValue (FArray, FReal))
 
-    import Expression (
-        Op1 (Idx, Sin, Sum),
-        Op2 (Add, Mul, Sub))
-
-    import Trace (
-        TValue (TArray, TReal))
-
-    import Forward (
-        addSuccessor,
-        Forward,
-        Forwarded (FLift, FOp0, FOp1, FOp2, FMap, FMapV))
-
-    import qualified Debug.Trace as Debug (trace)
-
-    -- Partial derivatives from arrays, or real numbers, or missing
-    data Reversed = RArray [Float] | RReal Float | RNotC
-        deriving (Show)
-    -- Stores for each step seeding values and its partial derivate (can be null)
-    type Reverse = Map String ([Reversed], Reversed)
-
-    -- Outer wrapper for tracing reverse AD on some real output
-    reverse :: Forward -> String -> Float -> Reverse
-    reverse f s o = Debug.trace s $
-        let r = Map.singleton s ([RReal o], RReal o)
-            f' = addSuccessor f s s -- Add final successor to itself so it can seed itself
-        in  reverse' f' [s] r
-
-    reverse' :: Forward -> [String] -> Reverse -> Reverse
-    reverse' _ []     r = r
-    reverse' f (s:ss) r = Debug.trace ("reverse' " ++ s) $
-        case getSeed f r s of
-            Just o -> Debug.trace ("getSeed " ++ s ++ " = " ++ show o) $
-                let (fd, _, _) = f Map.! s
-                    (r', a)    = case fd of 
-                        FMap  _ _ -> seedMap f s r o
-                        FMapV _ _ -> seedMap f s r o
-                        _         -> Debug.trace ("seedAncestors " ++ s) $ seedAncestors f (setSeed r s o) o fd
-                in  reverse' f (ss ++ a) r'
-            Nothing -> reverse' f ss r -- skip this occurrence
-
-    reverse'' :: Forward -> [String] -> Reverse -> [String] -> (Reverse, [String])
-    reverse'' _ []     r ks = (r, ks)
-    reverse'' f (s:ss) r ks =
-        case getSeed f r s of
-            Just o ->
-                let (fd, _, _) = f Map.! s
-                    (r', a)    = case fd of 
-                        FMap  _ _ -> seedMap f s r o
-                        FMapV _ _ -> seedMap f s r o
-                        _         -> seedAncestors f (setSeed r s o) o fd
-                in  reverse'' f (ss ++ a) r' ks
-            Nothing -> reverse'' f ss r (s:ks)
-
-    getSeed :: Forward -> Reverse -> String -> Maybe Reversed
-    getSeed f r s =
-        let (t, dss, _) = f Map.! s -- Get successors
-        in  Debug.trace ("successors " ++ s ++ " = " ++ show dss) $ case t of
-                FMap  _ _ -> arraySeed dss
-                FMapV _ _ -> arraySeed dss
-                _         -> realSeed dss
-        where
-            arraySeed :: [String] -> Maybe Reversed
-            arraySeed []     = Just $ RArray []
-            arraySeed (d:ds) = case r Map.! d of
-                (_, RNotC)     -> Nothing
-                (_, RArray vs) -> case arraySeed ds of
-                    Just (RArray vs') -> Just $ RArray (zipWith (+) vs vs')
-                    Just _            -> error "Type mismatch in getSeed/arraySeed/RArray"
-                    Nothing           -> Nothing
-                (_, RReal v)   -> case arraySeed ds of
-                    Just (RArray vs') -> case f Map.! d of
-                        (FOp1 (Idx i) _, _, _) -> Just $ RArray (zipWith (+) (sih v i (length vs')) vs')
-                        (FOp1 Sum     _, _, _) -> Just $ RArray (zipWith (+) (copy v (length vs')) vs')
-                        _                      -> error "Type mismatch in getSeed/arraySeed/RReal (2)"
-                    Just _            -> error "Type mismatch in getSeed/arraySeed/RReal (1)"
-                    Nothing           -> Nothing
-            realSeed :: [String] -> Maybe Reversed
-            realSeed []     = Just $ RReal 0
-            realSeed (d:ds) = case r Map.! d of
-                (_, RNotC)     -> Nothing
-                (_, RArray vs) -> case realSeed ds of
-                    Just (RReal v') -> Just $ RReal (sum vs + v')
-                    Just _          -> error "Type mismatch in getSeed/realSeed/RArray"
-                    Nothing         -> Nothing
-                (_, RReal v)   -> case realSeed ds of
-                    Just (RReal v') -> Just $ RReal (v + v')
-                    Just _          -> error "Type mismatch in getSeed/realSeed/RReal"
-                    Nothing         -> Nothing
-
-    seedAncestors :: Forward -> Reverse -> Reversed -> Forwarded -> (Reverse, [String])
-    seedAncestors _ r _ (FLift _)       = (r, [])
-    seedAncestors _ r _ (FOp0  _)       = (r, [])
-    seedAncestors f r o (FOp1  op s1)   =
-        let (_, _, v1) = f Map.! s1
-        in  case (op, v1, o) of
-                (Sin,   TReal  _ v, RReal  rv) -> (addSeed r s1 (RReal $ rv * cos v), [s1])
-                (Sum,   TArray _ _, RArray rv) -> (addSeed r s1 (RArray rv), [s1])
-                (Idx i, TArray _ _, RArray rv) -> (addSeed r s1 (RArray $ ohe i rv), [s1])
-                _                              -> error "Type mismatch in seedAncestors/FOp1"
-    seedAncestors f r o (FOp2 op s1 s2) =
-        let (_, _, v1) = f Map.! s1
-            (_, _, v2) = f Map.! s2
-        in  case (op, v1, v2, o) of
-                (Add, TReal _ _,  TReal _ _,  RReal rv) ->
-                    let r1 = Debug.trace ("addSeed " ++ s1 ++ " = " ++ show o) $ addSeed r s1 (RReal rv)
-                    in  Debug.trace ("addSeed " ++ s2 ++ " = " ++ show o) (addSeed r1 s2 (RReal rv), [s1, s2])
-                (Mul, TReal _ va, TReal _ vb, RReal rv) ->
-                    let r1 = addSeed r s1 (RReal $ rv * vb)
-                    in  (addSeed r1 s2 (RReal $ rv * va), [s1, s2])
-                (Sub, TReal _ _,  TReal _ _,  RReal rv) ->
-                    let r1 = addSeed r s1 (RReal rv)
-                    in  (addSeed r1 s2 (RReal rv), [s1, s2])
-                _                                       -> error "Type mismatch in seedAncestors/FOp2"
-
-    seedMap :: Forward -> String -> Reverse -> Reversed -> (Reverse, [String])
-    seedMap f s2 r o =
-        let (t, _, _) = f Map.! s2
-        in  case (t, o) of
-            (FMap tss s1, RArray o') ->
-                let (resr, ress) = q tss o' 0 s1
-                    ress' = removeDupes ress
-                in  (addSeed r s1 resr, ress')
-        where
-            q :: [Forward] -> [Float] -> Int -> String -> (Reversed, [String])
-            q (g:gs) (p:ps) i s1 =
-                let so = s1 ++ '!' : show i
-                    st = s2 ++ '!' : show i
-                    r' = Map.insert st ([], RReal p) r
-                    (lr, ls) = reverse'' g [st] r' []
-                    (rr, rs) = q gs ps (i + 1) s1
-                in  case (rr, snd $ lr Map.! so) of
-                    (RArray vs, RReal v) -> (RArray $ zipWithAlt (+) vs (sih v i (i + 1)), ls ++ rs)
+    data Adjoint
+        = AArray  [Float]
+        | ANull
+        | AReal   Float
+        | ASparse Int Float
     
-    addSeed :: Reverse -> String -> Reversed -> Reverse
-    addSeed r s1 v = Debug.trace ("addSeed " ++ s1) $ case indexCheck s1 of
-        Left  _       -> case Map.lookup s1 r of
-            Just (vs, o) -> Map.insert s1 (v : vs, o) r
-            Nothing      -> Map.insert s1 ([v], RNotC) r
-        Right (s', i) -> case (Map.lookup s' r, v) of
-            (Just (vs, o), RReal  v') -> Map.insert s' (RArray (sih v' i (i + 1)) : vs, o) r
-            (Just (vs, o), RArray _)  -> Map.insert s' (v : vs, o) r
-            (Nothing,      RReal  v') -> Map.insert s' ([RArray $ sih v' i (i + 1)], RNotC) r
-            (Nothing,      RArray _)  -> Map.insert s' ([v], RNotC) r
+    instance Show Adjoint where
+        show :: Adjoint -> String
+        show (AArray    as) = "(AArray " ++ show as ++ ")"
+        show ANull          = "ANull"
+        show (AReal     a)  = "(AReal " ++ show a ++ ")"
+        show (ASparse i a)  = "(ASparse " ++ show i ++ " " ++ show a ++ ")"
 
-    removeDupes :: (Ord a) => [a] -> [a]
-    removeDupes xss = remove $ sort xss
+    type Reverse = Map String ([Adjoint], Adjoint)
+
+    -- Operator to combine two adjoints together
+    -- NOTE: The resulting adjoint is shaped like the first argument (not associative)
+    (<+) :: Adjoint -> Adjoint -> Adjoint
+    (<+) (AArray    as) (AArray    bs) = AArray $ zipWith (+) as bs
+    (<+) (AArray    as) (AReal     b)  = AArray $ map (+ b) as
+    (<+) (AArray    as) (ASparse i b)  = let bs = drop i as in AArray (take i as ++ (b + head bs) : tail bs)
+    (<+) (AReal     a)  (AArray    bs) = AReal $ a + sum bs
+    (<+) (AReal     a)  (AReal     b)  = AReal $ a + b
+    (<+) (AReal     a)  (ASparse _ b)  = AReal $ a + b
+    (<+) (ASparse i a)  (AArray    bs) = let as = drop i bs in AArray (take i bs ++ (a + head as) : tail as)
+    (<+) (ASparse _ _)  (AReal     _)  = error "Cannot combine sparse ajdoint with real adjoint, because length of adjoint array is unknown"
+    (<+) (ASparse _ _)  (ASparse _ _)  = error "Cannot combine sparse ajdoint with sparse adjoint, because length of adjoint array is unknown"
+    (<+) ANull          a              = error $ "Tried to combine null adjoint with " ++ show a
+    (<+) a              ANull          = error $ "Tried to combine adjoint " ++ show a ++ " with null adjoint"
+
+    addAdjoint :: String -> Adjoint -> Reverse -> Reverse
+    addAdjoint s a r = case Map.lookup s r of
+        Just (as, _) -> Map.insert s (a : as, ANull) r
+        Nothing      -> Map.insert s ([a], ANull) r
+
+    assignAdjoints :: Forwarded -> String -> Adjoint -> Forward -> Reverse -> (Reverse, [String])
+    assignAdjoints (FOp1 op s1) _ a f r = case (op, a) of
+        (Idx i, AReal a') -> (addAdjoint s1 (ASparse i a') r, [s1])
+        (Sin,   AReal a') -> case getValue s1 f of
+            (FReal _ x) -> (addAdjoint s1 (AReal $ a' * cos x) r, [s1])
+            _           -> error "Type mismatch in assignAdjoints/FOp1/Sin"
+        (Sum,   AReal a') -> case getValue s1 f of
+            (FArray _ xs) -> (addAdjoint s1 (AArray $ replicate (length xs) a') r, [s1])
+            _             -> error "Type mismatch in assignAdjoints/FOp1/Sum"
+        _                 -> error "Type mismatch in assignAdjoints/FOp1"
+
+    assignAdjoints (FOp2 op s1 s2) _ a f r = case (op, a) of
+        (Add, _)        -> (addAdjoint s1 a (addAdjoint s2 a r), [s1, s2])
+        (Mul, AReal a') -> case (getValue s1 f, getValue s2 f) of
+            (FReal _ v1, FReal _ v2) -> (addAdjoint s1 (AReal $ a' * v2) (addAdjoint s2 (AReal $ a' * v1) r), [s1, s2])
+            _                        -> error "Type mismatch in assignAdjoints/FOp2/Mul"
+        (Sub, _)        -> (addAdjoint s1 a (addAdjoint s2 a r), [s1, s2])
+        _               -> error "Type mismatch in assignAdjoints/FOp2"
+    
+    assignAdjoints (FMap fss s1) s a _ r =
+        let as = reverseMap fss 0
+            ac = foldl (<+) (AArray $ replicate (length fss) 0.0) as
+        in  (addAdjoint s1 ac r, [s1])
         where
-            remove []       = []
-            remove [x]      = [x]
-            remove (x:y:xs)
-                | x == y    = remove (x:xs)
-                | otherwise = x : remove (y:xs)
+            reverseMap :: [Forward] -> Int -> [Adjoint]
+            reverseMap []     _ = []
+            reverseMap (f:fs) i =
+                let s' = s ++ '!' : show i
+                    rx = reverse f s' (indexAdjoint i a)
+                    ax = toSparse i $ fst $ combineAdjoints (s1 ++ '!' : show i) f rx
+                in  ax : reverseMap fs (i + 1)
+            toSparse :: Int -> Adjoint -> Adjoint
+            toSparse i (AReal a') = ASparse i a'
+            toSparse _ _          = error "Type mismatch in assignAdjoints/FMap"
 
-    indexCheck :: String -> Either String (String, Int)
-    indexCheck []       = Left []
-    indexCheck ('!':ss) = Right ([], read ss)
-    indexCheck (s  :ss) = case indexCheck ss of
-        Left  s'      -> Left $ s : s'
-        Right (s', i) -> Right (s : s', i)
+    assignAdjoints (FMapV f' s1) s a f r = error "Couldn't figure out implementation for FMapV"
 
-    ohe :: Int -> [Float] -> [Float]
-    ohe _ []       = []
-    ohe 0 (x:xs) = x : ohe (-1)    xs
-    ohe t (_:xs) = 0 : ohe (t - 1) xs
+    assignAdjoints (FFold f s1 s2) s a _ r =
+        let r' = reverse f s a
+            a' = snd $ r' Map.! s1
+        in  case Map.lookup s2 r' of
+            Just (_, z') -> (addAdjoint s1 a' (addAdjoint s2 z' r), [s1, s2])
+            Nothing      -> (addAdjoint s1 a' r, [s1])
 
-    sih :: Float -> Int -> Int -> [Float]
-    sih _ _ 0 = []
-    sih v 0 l = v : sih v (-1)    (l - 1)
-    sih v i l = 0 : sih v (i - 1) (l - 1)
+    assignAdjoints (FFoldV f1 q f2 s1 s2) s a _ r =
+        if   Map.null f2
+        then let r' = reverse f1 s a
+                 a' = snd $ r' Map.! s1
+                 z' = snd $ r' Map.! s1
+             in  (addAdjoint s1 a' (addAdjoint s2 z' r), [s1, s2])
+        else let r2 = reverse f2 s a
+                 a2 = snd $ r2 Map.! q
+                 ss = getJoin
+                 (a1s, z') = getParts ss a2
+                 a1 = foldl (<+) (AArray $ replicate (Map.size f1) 0.0) a1s
+             in  (addAdjoint s1 a1 (addAdjoint s2 z' r), [s1, s2])
+        where
+            getJoin :: [String]
+            getJoin = case f2 Map.! q of
+                (FJoin ss, _, _) -> ss
+                _                -> error "Type mismatch in assignAdjoints/FFoldV"
+            getParts :: [String] -> Adjoint -> ([Adjoint], Adjoint)
+            getParts []      _              = ([], AReal 0.0)
+            getParts (s':ss) (AArray (a':as)) =
+                let r'  = reverse f1 s' (AReal a')
+                    a'' = snd $ r' Map.! s'
+                    (ra, z') = getParts ss (AArray as)
+                in  case Map.lookup s2 r' of
+                    Just (_, z'') -> (a'' : ra, z' <+ z'')
+                    Nothing       -> (a'' : ra, z')
 
-    copy :: Float -> Int -> [Float]
-    copy _ 0 = []
-    copy v i = v : copy v (i - 1)
+    assignAdjoints (FJoin  sss) _ a _ r = (assignAll sss a, sss)
+        where
+            assignAll []     _                = r
+            assignAll (s:ss) (AArray (a':as)) = addAdjoint s (AReal a') (assignAll ss (AArray as))
 
-    setSeed :: Reverse -> String -> Reversed -> Reverse
-    setSeed r s o = Debug.trace ("setSeed " ++ s) $ case Map.lookup s r of
-        Just (rs, _) -> Map.insert s (rs, o) r
-        Nothing      -> Map.insert s ([], o) r
+    assignAdjoints _ _ _ _ r = (r, [])
 
-    zipWithAlt :: (a -> a -> a) -> [a] -> [a] -> [a]
-    zipWithAlt f a b =
-        let c = zipWith f a b
-        in  if   length a > length b
-            then c ++ drop (length c) a
-            else c ++ drop (length c) b
+    combineAdjoints :: String -> Forward -> Reverse -> (Adjoint, Reverse)
+    combineAdjoints s f r =
+        let (as, _) = r Map.! s
+            a       = foldr (<+) empty as
+        in  (a, Map.insert s (as, a) r)
+        where
+            empty :: Adjoint
+            empty = case getValue s f of
+                    (FArray _ xs) -> AArray $ replicate (length xs) 0.0
+                    (FReal  {})   -> AReal 0.0
+                    _             -> error "Type mismatch in combineAdjoints/empty"
+    
+    -- Helper function for getting the intermediate value of an element in the forward trace
+    getValue :: String -> Forward -> FValue
+    getValue s f = let (_, _, v) = f Map.! s in v
+
+
+    -- Gets the value at a certain index of an array adjoint
+    indexAdjoint :: Int -> Adjoint -> Adjoint
+    indexAdjoint 0 (AArray (a:_))  = AReal a
+    indexAdjoint i (AArray (_:as)) = indexAdjoint (i - 1) (AArray as)
+    indexAdjoint _ (AArray [])     = error "Out of range in indexAdjoint"
+    indexAdjoint _ _               = error "Type mismatch in indexAdjoint"
+
+    -- Checks if an adjoint has all its parts ready, and combines them if necessary
+    resolve :: String -> Forward -> Reverse -> Reverse
+    resolve s f r = case Map.lookup s r of
+        Just (as, ANull) -> case Map.lookup s f of
+            Just (fd, c, _) -> if   length as >= c 
+                               then let (a,  r1) = combineAdjoints s f r
+                                        (r2, sa) = assignAdjoints fd s a f r1
+                                    in  explore sa r2
+                               else r
+            Nothing         -> error $ "Variable " ++ show s ++ " not in forward trace:\n" ++ show f
+        Just _           -> r
+        Nothing          -> r
+        where
+            explore :: [String] -> Reverse -> Reverse
+            explore []      r' = r'
+            explore (s':ss) r' = explore ss (resolve s' f r')
+
+    -- Wrapper function for the overall reverse pass
+    -- Adds the final adjoint to the an empty reverse map so it can be resolved
+    reverse :: Forward -> String -> Adjoint -> Reverse
+    reverse f s a = resolve s f $ Map.singleton s ([a], ANull)
