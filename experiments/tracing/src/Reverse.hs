@@ -5,6 +5,8 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
     import Prelude hiding (reverse)
     import qualified Data.Map.Strict as Map
     import Data.Map (Map ())
+    import qualified Data.Set as Set
+    import Data.Set (Set)
     import Expression (Op1 (Idx, Sin, Sum), Op2 (Add, Mul, Sub))
     import Forward (Forward, Forwarded (FOp1, FOp2, FMap, FMapV, FFold, FFoldV, FJoin), FValue (FArray, FReal))
 
@@ -59,20 +61,34 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
         _               -> error "Type mismatch in assignAdjoints/FOp2"
     
     assignAdjoints (FMap fss s1) s a _ r =
-        let as = reverseMap fss 0
-            ac = foldl (<+) (AArray $ replicate (length fss) 0.0) as
-        in  (addAdjoint s1 ac r, [s1])
+        let (as, r', ss) = reverseMap fss 0
+            -- Fold sparse adjoints into single array adjoint
+            a' = foldl (<+) (AArray $ replicate (length fss) 0.0) as
+        in  (addAdjoint s1 a' r', Set.toList ss)
         where
-            reverseMap :: [Forward] -> Int -> [Adjoint]
-            reverseMap []     _ = []
+            reverseMap :: [Forward] -> Int -> ([Adjoint], Reverse, Set String)
+            reverseMap []     _ = ([], r, Set.empty)
             reverseMap (f:fs) i =
-                let s' = s ++ '!' : show i
-                    rx = reverse f s' (indexAdjoint i a)
-                    ax = toSparse i $ fst $ combineAdjoints (s1 ++ '!' : show i) f rx
-                in  ax : reverseMap fs (i + 1)
+                let s'  = s ++ '!' : show i
+                    rx  = reverse f s' (indexAdjoint i a)
+                    -- Extract the array item for 
+                    ax  = toSparse i $ fst $ combineAdjoints s' f rx
+                    -- Remove items from the original and destination array from this reverse pass
+                    -- and add the array items partial adjoint
+                    rx' = Map.delete s' (Map.delete (s1 ++ '!' : show i) rx)
+                    -- Find the results of the rest of the map
+                    (axs, rxs, sxs) = reverseMap fs (i + 1)
+                in  (
+                    -- Add this sparse partial to the list
+                    ax : axs,
+                    -- Add rx' to the main reverse pass
+                    Map.unionWith unionReverse rxs rx',
+                    -- Add relevant keys to the set of ancestors
+                    Set.union sxs $ Map.keysSet rx'
+                )
             toSparse :: Int -> Adjoint -> Adjoint
             toSparse i (AReal a') = ASparse i a'
-            toSparse _ _          = error "Type mismatch in assignAdjoints/FMap"
+            toSparse _ _          = error "Type mismatch in assignAdjoints/FMap/toSparse"
 
     assignAdjoints (FMapV f' s1) s a f r = error "Couldn't figure out implementation for FMapV yet"
 
@@ -136,7 +152,6 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
     getValue :: String -> Forward -> FValue
     getValue s f = let (_, _, v) = f Map.! s in v
 
-
     -- Gets the value at a certain index of an array adjoint
     indexAdjoint :: Int -> Adjoint -> Adjoint
     indexAdjoint 0 (AArray (a:_))  = AReal a
@@ -144,6 +159,12 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
     indexAdjoint _ (AArray [])     = error "Out of range in indexAdjoint"
     indexAdjoint _ _               = error "Type mismatch in indexAdjoint"
 
+    -- Joins two reverse maps together, left-biased
+    -- TODO: Actually implement this in assignAdjoints for FMap, FMapV, FFold, and FFoldV
+    unionReverse :: ([Adjoint], Maybe Adjoint) -> ([Adjoint], Maybe Adjoint) -> ([Adjoint], Maybe Adjoint)
+    unionReverse (asa, aa) (asb, _) = (asa ++ asb, aa)
+
+    -- Utility function to un-maybe a maybed value or report a helpful error
     justify :: Maybe a -> String -> a
     justify (Just a) _ = a
     justify Nothing  s = error $ "Failed to justify at " ++ s
