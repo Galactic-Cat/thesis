@@ -9,17 +9,17 @@
 
     The main difference between the tape used for AD and a regular trace as laid out in Section \ref{sec:tracing}, is the lack of intermediate values in the latter.
     However, provided a trace, we could simply calculate these intermediate values.
-    Even better is just storing the intermediate values while we trace a program, this is not really any extra work because these intermediate values are calculated by the tracing function already.
+    Even better is just storing the intermediate values while we trace a program; this is not really any extra work because these intermediate values are calculated by the tracing function already.
     Consider our trace definition in Listing \ref{lst:traced} as a list of tuples consisting of strings as identifiers and a data constructor denoting the action taken.
     We could just add intermediate values to this structure, but we will soon find this not to be quite enough.
     
-    For instance, look at the computational graph in Figure \ref{fig:forward_graph} for $f(x_1,x_2)\coloneqq x_1+(x_1\times x_2)$.
     \begin{figure}[htb]
         \centering
         \includegraphics[scale=0.5]{diagrams/forward_example.png}
         \caption{Computational graph of $f(x_1,x_2)\coloneqq x_1+(x_1\times x_2)$}
         \label{fig:forward_graph}
     \end{figure}
+    For instance, look at the computational graph in Figure \ref{fig:forward_graph} for $f(x_1,x_2)\coloneqq x_1+(x_1\times x_2)$.
     Now, let us say $x_1=5$, and $x_2=3$, and trace it using the method from Section \ref{sec:tracing}.
     This gives us the trace as \texttt{trace\_result} in Listing \ref{lst:forward_trace}.
     This trace is very straightforward: $x_1$ and $x_2$ are assigned their values, and the multiplication is used in the addition, so it shows up first.
@@ -41,7 +41,7 @@
         ])
     \end{haskell}
     Now, let us look at the partial derivatives of $f$ in Equation \ref{eq:reverse_ex}, as we would calculate them using chain rule.
-    In Equation \ref{eq:reverse_ex2} we see which calculations we need to perform, we define the partial derivatives or ``adjoints'' of a variable $r_i$ as $\bar{r_i}$.
+    In Equation \ref{eq:reverse_ex2} we see which calculations we need to perform, we define the partial derivatives or ``adjoints'' of a variable $r_i$ as $\bar{r}_i$.
     We also assume here that the ``seed'' value (the value of $\bar{f}$) is one.
     \begin{equation} \label{eq:reverse_ex}
         \begin{aligned}
@@ -50,62 +50,72 @@
                 \frac{\partial r_2(x_1,r_1)}{\partial x_2}
             \end{bmatrix}\tran\\
             &=\begin{bmatrix}
+                \frac{\partial x_1}{\partial x_1}+\frac{\partial r_2(x_1,r_1)}{\partial r_1}\cdot\frac{\partial r_1(x_1,x_2)}{\partial x_1}\\
+                \frac{\partial x_1}{\partial x_2}+\frac{\partial r_2(x_1,r_1)}{\partial r_1}\cdot\frac{\partial r_1(x_1,x_2)}{\partial x_2}
+            \end{bmatrix}\tran\\
+            &=\begin{bmatrix}
                 1+\frac{\partial r_2(x_1,r_1)}{\partial r_1}\cdot\frac{\partial r_1(x_1,x_2)}{\partial x_1}\\
                 0+\frac{\partial r_2(x_1,r_1)}{\partial r_1}\cdot\frac{\partial r_1(x_1,x_2)}{\partial x_2}
             \end{bmatrix}\tran\\
             &=\begin{bmatrix}
-                1+\partial x_1\cdot x_2\\
-                \partial x_2\cdot x_1
+                1+1\cdot\frac{\partial r_1(x_1,x_2)}{\partial x_1}\\
+                0+1\cdot\frac{\partial r_1(x_1,x_2)}{\partial x_2}
+            \end{bmatrix}\tran\\
+            &=\begin{bmatrix}
+                1+x_2\\
+                x_1
             \end{bmatrix}\tran
         \end{aligned}
     \end{equation}
     \begin{equation} \label{eq:reverse_ex2}
         \begin{aligned}
-            \bar{f}=\bar{r_2}&=1\\
-            \bar{r_1}&=\bar{r_2}\times1\\
-            \bar{x_2}&=\bar{r_1}\times x_1\\
-            \bar{x_1}&=\bar{r_2}\times1\\
-            &+\bar{r_1}\times x_2
+            \bar{f}=\bar{r}_2&=1\\
+            \bar{r}_1&=\bar{r}_2\times1\\
+            \bar{x}_2&=\bar{r}_1\times x_1\\
+            \bar{x}_1&=\bar{r}_2\times1\\
+            &+\bar{r}_1\times x_2
         \end{aligned}
     \end{equation}
     With our trace and derivative operations defined, we can now look at how we would get from one to the other.
     It is important to start at the output of the program, and since the trace function we defined in Section \ref{sec:tracing} provides us with the named output, we know where to start on our reverse pass.
     In this case, that would be $r_2$.
     As the final value in the primal calculation is the output of the program, its adjoint will be equal to the adjoint of the program or the seed value.
-    This is why Equation \ref{eq:reverse_ex2} posits $\bar{f}=\bar{r_2}$.
+    This is why Equation \ref{eq:reverse_ex2} posits $\bar{f}=\bar{r}_2$.
 
-    Since we are currently working in reverse execution order, we can just use $\bar{r_2}$ to calculate $\bar{x_1}$ and $\bar{r_1}$ directly.
+    Since we are currently working in reverse execution order, we can just use $\bar{r}_2$ to calculate $\bar{x}_1$ and $\bar{r}_1$ directly.
     It should be reiterated that the trace does not encode any explicit information on the order of operations taken while tracing.
     It is of course a list that was built up one operation at the time, but relying on this forces us to do our reverse pass linearly through the trace, which would prevent some task parallelism opportunities.
     Furthermore, while we can also deduce some order from the naming of the intermediate steps (e.g. $r_1$ was done before $r_2$), we should not do this programmatically, because we wish to reserve parallelism opportunities, but also because some intermediate steps might be hidden in the sub-trace of a map.
     Luckily, we can also discover the ``ancestors'' of any step in the trace by looking at the traced operation.
-    For $r_2$ the traced operation was \texttt{TOp2 Add "x1" "r1"}, so we know that for our reverse pass, we next want to look at $x_1$ and $r_1$, as their adjoints (or part of them) rely on the value of $\bar{r_2}$ (which we can also see in Equation \ref{eq:reverse_ex2}).
+    For $r_2$ the traced operation was \texttt{TOp2 Add "x1" "r1"}, so we know that for our reverse pass, we next want to look at $x_1$ and $r_1$, as their adjoints (or part of them) rely on the value of $\bar{r}_2$ (which we can also see in Equation \ref{eq:reverse_ex2}).
     For now we will gloss over how we decide which ancestor adjoint to compute first, and just look at the adjoint of $r_1$.
     
-    We know that $\bar{r_1}$ is dependent on $\bar{r_2}$, but how exactly is defined by the operation that produced $r_2$, which in this case is addition.
+    We know that $\bar{r}_1$ is dependent on $\bar{r}_2$, but how exactly is defined by the operation that produced $r_2$, which in this case is addition.
     Now, addition is really simple, as the derivative of addition of two values is the addition of the derivatives of those values.
-    See Equation \ref{eq:reverse_add}, where we calculate the adjoint $\bar{r_1}$ and see how this addition just resolves to one.
+    See Equation \ref{eq:reverse_add}, where we calculate the adjoint $\bar{r}_1$ and see how this addition just resolves to $1$.
     \begin{equation} \label{eq:reverse_add}
         \begin{aligned}
-            \bar{r_1}&=\bar{r_2}\cdot\frac{\partial r_2}{\partial r_1}\\
-            &=\bar{r_2}\cdot\frac{\partial(x_1+r_1)}{\partial r_1}\\
-            &=\bar{r_2}\cdot1
+            \bar{r}_1&=\bar{r}_2\cdot\frac{\partial r_2(x_1, r_1)}{\partial r_1}\\
+            &=\bar{r}_2\cdot\frac{\partial(x_1+r_1)}{\partial r_1}\\
+            &=\bar{r}_2\cdot\left(\frac{\partial x_1}{\partial r_1}+\frac{\partial r_1(x_1,x_2)}{\partial r_1}\right)\\
+            &=\bar{r}_2\cdot(0+1)\\
+            &=\bar{r}_2
         \end{aligned}
     \end{equation}
 
     We can again find the ancestors of $r_1$ by looking at the trace, where we find $x_1$ and $x_2$.
     Let us look at $x_2$ first.
-    $\bar{x_2}$ is dependent on $\bar{r_1}$, which we just calculated, but rather than an addition (like $r_2$), $r_1$ is a multiplication.
+    $\bar{x}_2$ is dependent on $\bar{r}_1$, which we just calculated, but rather than an addition (like $r_2$), $r_1$ is a multiplication.
     We mentioned in Section \ref{sec:bg_ad}, in Equation \ref{eq:dualnumbers}, how the derivative of a multiplication uses both the primal part and the derivative part of a number.
-    To get $\bar{x_2}$ we realize (as is visible in Equation \ref{eq:reverse_ex2} as well), that we need the primal value of $x_1$.
+    To get $\bar{x}_2$ we realize (as is visible in Equation \ref{eq:reverse_ex2} as well), that we need the primal value of $x_1$.
     We mentioned before we needed the intermediate values, and this is why.
     Multiplication is not the only operation that requires a primal component, but it is a prime example.
     We see in Equation \ref{eq:reverse_mul} how this adjoint resolves to use the primal component $x_1$.
     \begin{equation} \label{eq:reverse_mul}
         \begin{aligned}
-            \bar{x_2}&=\bar{r_1}\cdot\frac{\partial r_1}{\partial x_2}\\
-            &=\bar{r_1}\cdot\frac{\partial(x_1x_2)}{\partial x_2}\\
-            &=\bar{r_1}\cdot x_1
+            \bar{x}_2&=\bar{r}_1\cdot\frac{\partial r_1(x_1,x_2)}{\partial x_2}\\
+            &=\bar{r}_1\cdot\frac{\partial(x_1\cdot x_2)}{\partial x_2}\\
+            &=\bar{r}_1\cdot x_1
         \end{aligned}
     \end{equation}
 
@@ -114,27 +124,30 @@
     This is somewhat intuitive, $r_1$ is a multiplication, and its tangent is $\dot{r_1}=\dot{x_1}\times x_2+\dot{x_2}\times x_1$.
     However, this is not the case for reverse-mode AD.
     In reverse-mode, we see that this information gets passed on to the adjoints of the variable used by the operation, rather than the variable it produced.
-    It should be clear why: the tangents denote how the variable is influenced by a change in the inputs, while an adjoint denotes how its corresponding variable influence the outputs.
+    It should be clear why: the tangents denote how the variable is influenced by a change in the inputs, while an adjoint denotes how its corresponding variable influences the outputs.
     It is important to closely observe this, mainly for implementation purposes: we want to calculate (part of) the adjoint before we actually arrive at that step in the trace.
-    To calculate $\bar{x_2}$ we need to know what variable $x_2$ was multiplied with (namely $x_1$).
-    This means that if we do not want to helplessly bounce around through our trace looking for references (to $x_2$ for example), it would be better to calculate (the relevant part of) $\bar{x_2}$ while we still see how it is being used.\\
+    To calculate $\bar{x}_2$ we need to know what variable $x_2$ was multiplied with (namely $x_1$).
+    This means that if we do not want to search through our trace looking for references (to $x_2$ for example) every time, it would be better to calculate (the relevant part of) $\bar{x}_2$ while we still see how it is being used.\\
     This then also bring us neatly to our next conundrum: what if a variable is used multiple times.
     In the example, this goes for $x_1$, something that we have ignored until now.
     The mathematical solution is simple: the partial derivative of a variable that is used multiple times, is just a summation of the adjoints arising from those uses.
-    We see this in Equation \ref{eq:reverse_ex2}, where $\bar{x_1}$ is calculated by adding the influence from $r_1$ and the influence from $r_2$ together.
+    We see this in Equation \ref{eq:reverse_ex2}, where $\bar{x}_1$ is calculated by adding the influence from $r_1$ and the influence from $r_2$ together.
     However, implementation-wise this can be a bit of a hurdle.
 
     As mentioned, the trace is not in any order.
     This is unlike a typical Wengert list or tape.
     While assuring some order beforehand, or doing topological sort on the computational graph described by the trace, will in large part solve this problem, it also enforces linear execution of the reverse pass.
-    And while it is not something we will linger on for now, allowing for concurrency or task parallelism while calculating the derivative, might be a nice for a performance boost, and complement the inherit data-parallelism opportunities of array operations.
+    And while it is not something we will linger on for now, allowing for concurrency or task parallelism while calculating the derivative might be a nice for a performance boost, and complement the inherent data-parallelism opportunities of array operations.
     So, to solve this, we want to include some form of reference counting.
-    During the forward-pass we could count how many times each variable is used in the trace, since we need to store intermediate values anyways, keeping a counter for each of these variables seems like little extra work.
+    During the forward pass we could count how many times each variable is used in the trace.
+    Since we need to store intermediate values anyway, keeping a counter for each of these variables seems like little extra work.
     Now, on the reverse pass we can check these reference counters and every time we find part of the adjoint for a variable, we decrement its associated counter.
     If a counter has not reached zero after we have decremented it, we know its adjoint is not yet complete, and we can ignore it for now.
     If it has we can add up all the parts of the adjoint and continue from there.
-    Provided there is only one output to the program, we know that all reference counters will eventually reach zero, and therefor we are assured we will calculate all adjoints.
-    However, this provision is not as clear cut as it seems.
+    This is actually very similar to Kahn's algorithm for topological sorting\cite{kahn1962topological}, except that rather than sorting the graph beforehand, we immediately process the nodes as they become available (have all their incoming adjoints).
+    This means we actually do execute the reverse pass in topological order, but by discovering this order as we go it allows us to not strictly do the reverse pass sequentially, something of which we will discuss the merits of further on.
+    Provided there is only one output to the program, we know that all reference counters will eventually reach zero, and therefore we are assured we will calculate all adjoints.
+    However, this provision is not as clear-cut as it seems.
     Currently our DSL does not really have any room for multiple outputs, and as it is functional does not support any side-effects.
     Instead, to provide multiple outputs, currently the only way is to output an array.
     If we keep arrays in the trace, an array as output would still count as a single value.
@@ -166,9 +179,9 @@
         Now let us define a function \texttt{reverse} that does the reverse pass.
         This reverse pass should find all the adjoints in the program.
         So, it should take in an object of the \texttt{Forward} type and output a map containing the adjoints.
-        In Listing \ref{lst:reverse_def} we define constructors for adjoints: one for arrays, one for sparse arrays (represented by a single index and the associated value), one for real values, and a ``null'' value we can use as a placeholder.
+        In Listing \ref{lst:reverse_def} we define three constructors for adjoints: one for arrays, one for sparse arrays (represented by a single index and the associated value), and one for real values.
         We also define the \texttt{Reverse} type, which will contain these adjoints, and which is returned at the end of the reverse pass.
-        The \texttt{Reverse} type maps the names of each part of the calculation to a 2-tuple containing a list of contributions of other adjoints, and its own final adjoint.
+        The \texttt{Reverse} type maps the names of each part of the calculation to a 2-tuple containing a list of contributions of other adjoints, and its own final adjoint which uses maybe to indicate whether or not it has been calculated yet.
 
         \begin{haskell}[caption=Definition of the \texttt{Reverse} type, label=lst:reverse_def, gobble=12]
             data Adjoint
@@ -177,264 +190,373 @@
                 | AReal   Float
                 | ASparse Int Float
 
-            type Reverse = Map String ([Adjoint], Adjoint)
+            type Reverse = Map String ([Adjoint], Maybe Adjoint)
         \end{haskell}
 
-        With our data types defined, we can now look at the first cases of reverse AD.
-        In Listing \ref{lst:reverse} we define two functions: \texttt{reverse'} which will do most of the actual reverse pass, and a wrapper function called \texttt{reverse}.
-        To assign the adjoints in the \texttt{Reverse} map, we define a function \texttt{seedAncestors}.
-        This function, given in Listing \ref{lst:seedanc}, for a specified item in the trace, finds and adds the adjoints to the ancestors of this item (the ancestors in the computational graph).
-        To do this it needs to transform and combine adjoints of differing dimensions, to do this it uses the utility functions \texttt{toSingle}, \texttt{toArray}, \texttt{sumAdjoints}, and \texttt{combineAdjoints}.
-        These functions are defined in Listing \ref{lst:combine}, which we will discuss in a bit.
-        It also uses a utility function \texttt{getAncestors} which simply finds the ancestors of a trace item by looking at the specific step made; it is defined in Appendix \ref{app:utility}.
-        An important thing to note here is that if the \texttt{seedAncestors} function calculates the final adjoint of a node, when it is available.
-        This means that \texttt{reverse'} can just look at whether or not the final adjoint of a node is available, and only continue when it is.
-        If it is not, we can be assured it will be calculated later, as the path to the output to the node in question should be calculated still. % NOTE: Dit is misschien een beetje vaag
-        
-        \begin{haskell}[caption={The reverse pass function. \texttt{reverse} takes in a forward-pass trace, the name of the output of the program as a string, and the seed value (the adjoint of the output); and outputs a map containing all adjoints. \texttt{reverse'} takes in a forward-pass trace, a queue of items in the trace that still need to be passed on the reverse pass, and the current map of adjoints; and ouptuts the updated map of adjoints (from resolving the first item in the queue).}, label=lst:reverse, gobble=12]
-            reverse :: Forward -> String -> Adjoint -> Reverse
-            reverse t s v = reverse' t a r
+        Now before going into precise implementation details we should look at the general picture once more.
+        The forward pass provides us with three important components: the final output value of the forward evaluation, the trace on which to do our reverse pass, and the intermediate values we will need to actually calculate everything in the reverse pass.
+        First off, the final output value is not actually important for the trace, were it not that it also stores its name in the constructor (for \texttt{TValue}, see Listings \ref{lst:traced} and \ref{lst:language_array}).
+        This name points us where to start with the reverse pass, namely the step that produced this output value.
+
+        With our starting point clear, we can now start the reverse pass.
+        The programmer will provide some sort of adjoint value (either a real number or an array of them, depending on the output of the regular program), which we will immediately assign to our output value in the reverse pass.
+        This makes us ready to actually perform the rest of the reverse pass.
+
+        For any point in the reverse pass the process becomes simple.
+        Given some ``current'' point in the computational graph, we look up the adjoint (which should have been established by now) and the forward trace item for this point.
+        If the operation in the trace for the current point uses no other values (i.e. has no ``ancestors''), we are done here and return the reverse mapping that contains all the adjoints we have found.
+        If the operation does have ancestors, we look at the operation itself to determine how to transform the current point's adjoint for its ancestors.
+        If this transformation requires any intermediate values, we can look them up in the forward pass.
+        Given the transformed adjoints, we assign these to the adjoint accumulation list for each ancestor.
+        We also check if this list now has enough adjoints to match the reference counter in the forward pass.
+        If it does not, we are done and can return the reverse mapping.
+        However if it does, we add up all the partial adjoints in the list together into the final adjoint and place it in the reverse mapping.
+        Then finally, we start the same process for each ancestor of the current node that has its complete adjoint ready.
+
+        Now, let us talk implementation.
+        We define two reverse pass functions, \texttt{reverse} and \texttt{resolve}, of which the first will only be a wrapper for the final value and its adjoint to be inserted, and the latter will actually perform the reverse pass.
+        Both are shown in Listing \ref{lst:reverse_func}.
+        Listing \ref{lst:reverse_func} also introduces two helper functions: \texttt{combineAdjoints} for adding partial adjoints together into the final adjoint of a step in the computational graph, and \texttt{assignAdjoints} for transforming and assigning the adjoints to the ancestors of the current node.
+        We will safe the intricate details of \texttt{combineAdjoints} and \texttt{assignAdjoints} for later.
+        Finally, we use the \texttt{explore} helper function to try and resolve all the ancestors of the current node as well.
+
+        \begin{haskell}[caption=Definition of the reverse pass functions, label=lst:reverse_func, gobble=12]
+            reverse :: String -> Adjoint -> Forward -> Reverse
+            reverse s a f = resolve s f $\$$ Map.singleton s ([a], Nothing)
+
+            resolve :: String -> Forward -> Reverse -> Reverse
+            resolve s f r = case Map.lookup s r of
+                -- Lookup the state of the provided name in the reverse mapping
+                -- If its present, but its final adjoint not calculated, we need to check
+                -- if we can calculate it
+                Just (as, Nothing) -> case Map.lookup s f of
+                    -- Find the step taken and the reference counter in the forward pass
+                    -- If it is present, check whether or not the adjoint array contains
+                    -- items equal to the reference counter (so we know it's all there).
+                    Just (fd, c, _) -> if   length as >= c
+                                       -- If all partials are present, make the complete
+                                       -- adjoint and update the reverse map
+                                       then let (a,  r1) = combineAdjoints s f r
+                                            -- Then transform and assign the adjoints to
+                                            -- the ancestors of this current node.
+                                                (r2, sa) = assignAdjoints fd s a f r1
+                                            -- Then try all the ancestors as well
+                                            in  explore sa r2
+                                       -- If we're not ready, just return the current
+                                       -- reverse map
+                                       else r
+                    -- If the named variable isn't present in the forward trace, we've
+                    -- got a problem, so we throw an error
+                    Nothing         -> error "Variable not in forward trace"
+                -- If the adjoint is present, and its final adjoint is already calculated
+                -- then we must already be done here, so just return the current reverse
+                -- mapping
+                Just _             -> r
+                -- If the adjoint is missing from the reverse mapping entirely, it's because
+                -- we haven't run into it at all yet, so we can also return the reverse mapping
+                -- as it is.
+                Nothing            -> r
                 where
-                    r = seedAncestors t (Map.singleton s ([], v)) s
-                    a = getAncestors t s
-
-            reverse' :: Forward -> [String] -> Reverse -> Reverse
-            reverse' _ []     r = r
-            reverse' t (s:ss) r = case r Map.! s of
-                (_, ANull) -> reverse' t ss r
-                (_, a)     -> reverse' t ss'' r'
-                where
-                    (r', ss') = seedAncestors t r s a
-                    ss''      = ss ++ ss'
+                    -- Applies resolve over a list of ancestors
+                    explore :: [String] -> Reverse -> Reverse
+                    explore []      r' = r'
+                    explore (s':ss) r' = explore ss (resolve s' f r')
         \end{haskell}
 
-        It is the \texttt{seedAncestors} function that does most of the work.
-        The string passed to it is the name of the node whose ancestors need to be seeded.
-        This is the node which determines how the adjoints its ancestors' adjoints are transformed.
-        We see in Listing \ref{lst:seedanc} how we have different cases for the different constructors in our \texttt{Forwarded} class.
-        For variable instantiation and nullary operations the result is simple: since they have no ancestors they do not influence any adjoints.
+        We represent this process on the example program from Figure \ref{fig:forward_graph}, in Figure \ref{fig:reverse_graph}.
+        In Figure \ref{fig:reverse_graph} we see the computational graph (forward pass) from Figure \ref{fig:forward_graph} first, as (A).
+
+        Then, with $f=r_2$ as our output value from the forward pass, we can call \texttt{reverse} with some adjoint $a$, the name of $r_2$, and the forward pass we just found to get the reverse graph at (B); this assigns a value to $r_2$ in the reverse map, which we call $r'_2$ in Figure \ref{fig:reverse_graph}.
+
+        As part of the reverse map, $r'_2$ contains two items: a list of partial adjoints (currently only containing $a$), and a final adjoint that has not been calculated yet (so is stored as a \texttt{Nothing}).
+
+        Now we can get into the main loop by calling \texttt{resolve} for $r_2$ with the reverse mapping created by \texttt{reverse}.
+        As we can see in graph (C), as we find the partial adjoints $r'_2$ and find that the reference counter in the forward pass is $1=|r'_2|$, we can also call \texttt{combineAdjoints}, which transforms the list of partial adjoints in $r'_2$ to the complete adjoint $a$.
+
+        Then we call \texttt{assignAdjoints} to get graph (D).
+        \texttt{assignAdjoints} uses the forward pass to find the ancestors of the current node, in this case $x_1$ and $r_1$, and it also adds the final adjoint of the current node ($r'_2$'s final adjoint is $a$) to their lists of partial adjoints.
+
+        Then \texttt{resolve} on $r_2$ calls \texttt{explore} leading to a \texttt{resolve} call to each of $r_2$'s ancestors, with first up $x_1$ in graph (E).
+        However, as we can see from the forward graph (A), we still lack the adjoint from $r_1$ to $x_1$ (highlighted with the red arrow in graph (E)), so we can not resolve $x_1$ yet.
+
+        We leave $x_1$ for later, and this leads us to the resolve call on $r_1$ in graph (F).
+        Here we find that $r_1$ does have all its partial adjoints, so we call \texttt{combineAdjoints} to find that the completed adjoint for $r_1$ is also $a$.
+
+        Again, with this adjoint found, we can now call \texttt{assignAdjoints} to bring the adjoint of $r_1$ to its ancestors $x_1$ and $x_2$.
+        We will go into how later, but \texttt{assignAdjoints} looks in the forward pass to find that $r_1$ is a multiplication and appropriately transforms $r_1$'s adjoint of $a$ into $a\cdot x_2$ for $x'_1$, and $a\cdot x_1$ for $x'_2$.
+
+        Now in our final steps represented in graph (H), we explore the ancestors of $r_1$, starting with $x_1$.
+        We find that we now do have the correct number of partial adjoints for $x_1$, so we can add these together with \texttt{combineAdjoints} to get the final adjoint of $x_1$: $a+a\cdot x_2$.
+        Now, after \texttt{combineAdjoints} we call \texttt{assignAdjoints} on $x_1$, however we will find that $x_1$ has no ancestors, which means that $x_1$'s adjoint does not need to be assigned to anything and also that there is no further nodes to explore from $x_1$.
+
+        This means we move back to $r_1$'s explore function, which leads us to $x_2$.
+        Here we find again that we can use \texttt{combineAdjoints} to get $x_2$'s final adjoint, and with\\\texttt{assignAdjoints} that $x_2$ has no further ancestors.
+
+        This then moves us back to the end of the explore function in $r_1$, which now finished returns the update reverse mapping to the end of the explore function of $r_2$, which also finishes to return the updated reverse mapping to the original \texttt{reverse} function, and return our reverse pass to the programmer.
         
-        The unary operations are already more complicated, mostly because both of them are used on arrays.
-        The idea behind indexing is very simple: indexing is a lot like variable reference.
-        Since nothing happens when indexing, nothing should happen on the reverse pass either, except of course that the adjoint of the new variable is part of the adjoint of the array it was indexed from.
-        It should also be noted that indexing as an operation in the forward pass will only be present if we chose to not trace away arrays.
-        If we did trace away arrays with our forward pass, indexing operations would really be nothing more than variable reference, which would vanish in the trace.
-        This also means that the ancestor of the indexing operation is an array.
-        It is now important to realize that for a variable in the program, its adjoint will be of the same type.
-        This is not something we really think about with real numbers, however when we want to get the adjoint of an array, it can not be a real number, as the array's items may be used separately of each other and could therefor have different individual adjoints.
-        When we bring this back to indexing this seems somewhat obvious as well, it is not the whole array that influenced the variable that, it was only the indexed variable.
-        This gives us a clear idea of the derivative for an array that was indexed on: an array with the tangent or adjoint at the index that was indexed, and zeroes for every other item.
-        This mimics how we would extract a singleton value from a vector, which is effectively what we are doing, only in the differentiated part of the number.
-        In Listing \ref{lst:seedanc} we see this because we add a \texttt{ASparse} adjoint to the ancestor of the indexing operation.
-        These reperesent a sparse array where the first argument is the index of the only non-zero item, and the second item is that value.
-
-        For the sum operation our earlier observation about how the adjoint of an array is an array as well comes into play again.
-        The sum operation, like indexing, also only applies to arrays, however instead of only using one element of the array, it instead uses all of them.
-        What helps here is that we can imagine the sum operation as a regular list of additions.
-        The reverse pass over an addition operation is very simple: the adjoint of the variables that are added together are equal to the adjoint of the sum.
-        Now when we extend this to our array, we see that the (partial) adjoint of the array that is summed, is just an array with the adjoint of the sum for every item in array.
-
-        \begin{haskell}[caption={Function for seeding ancestors of a node. \texttt{seedAncestors} takes in the forward-pass trace, the current reverse pass map, the name of the item to seed the ancestors of, and the adjoint of that item to seed its ancestors with; and outputs a tuple containing an updated reverse pass, and a list of strings of items to evaluate to add to the reverse pass queue.}, label=lst:seedanc, gobble=12]
-            seedAncestors :: Forward -> Reverse -> String -> Adjoint -> (Reverse, [String])
-            seedAncestors t r s a = case traced of
-                FLift _        -> (r, [])
-                FOp0  _        -> (r, [])
-
-                FOp1  op s1    -> case op of
-                    Idx i -> (addAdjoint r s1 (ASparse i (toSingle a)), [s1])
-                    Sum   -> (addAdjoint r s (AArray (toArray a)), [s1])
-                
-                FOp2  op s1 s2 -> case op of
-                    Add -> 
-                        let r1 = addAdjoint r  s1 (AReal (toSingle a))
-                            r2 = addAdjoint r1 s2 (AReal (toSingle a))
-                        in  (r2, [s1, s2])
-                    Mul ->
-                        let r1 = addAdjoint r  s1 (AReal ((toSingle a) * intermediateF s2))
-                            r2 = addAdjoint r1 s2 (AReal ((toSingle a) * intermediateF s1))
-                        in  (r2, [s1, s2])
-                    Sub ->
-                        let r1 = addAdjoint r  s1 (AReal (toSingle a))
-                            r2 = addAdjoint r1 s2 (AReal (-1 * toSingle a))
-                        in  (r2, [s1, s2])
-                
-                FMap  fss s1   ->
-                    let (r1, as, ss) = seedMap fss r s 0
-                    in  (addAdjoint r1 s1 as, s1 : ss)
-                
-                where    
-                    addAdjoint :: Reverse -> String -> Adjoint -> Reverse
-                    addAdjoint z s b =
-                        let as' = b : as
-                        in  case t Map.! s of
-                            (_, f, c) ->
-                                if   length as' == c
-                                then Map.insert s (as', combineOrSumAdjoints f as') z
-                                else Map.insert s (as', ANull) z
-                        where
-                            as = case Map.lookup s z of
-                                Just (v, _) -> v
-                                Nothing     -> []
-
-                    traced :: Forwarded
-                    (_, traced, _) = t Map.! s
-
-                    intermediateA :: String -> [Float]
-                    intermediateA s = case t Map.! s of
-                        (TArray _ v, _, _) -> v
-                        _                  -> error "Intermediate not an array"
-
-                    intermediateF :: String -> Float
-                    intermediateF s = case t Map.! s of
-                        (TReal _ v, _, _) -> v
-                        _                 -> error "Intermediate not a float"
-        \end{haskell}
-
-        Our binary operations are relatively simple, as they are very standard and do not involve arrays.
-        We just discussed how addition just ``passes'' its adjoints through to its ancestors, and the same goes for subtraction.
-        That just leaves us with multiplication.
-        Here we see the first use of our intermediate values.
-        Using the \texttt{intermediateF} function, we extract the intermediate values from a multiplication's ancestors from our forward pass.
-        We then multiply those by the adjoint, and pass them on the appropriate ancestor.
-
-        \begin{figure}[htb]
-            \centering
-            \includegraphics[scale=0.5]{diagrams/map_example.png}
-            \caption{Computational graph of $g(a,\vec{b})\coloneqq\texttt{map}\ (+a)\ \vec{b}$}
-            \label{fig:map_graph}
+        \begin{figure}[p]
+            \begin{adjustbox}{addcode={\begin{minipage}{\width}}{\caption{%
+                Diagram representing the reverse pass process on the example from Figure \ref{fig:forward_graph}.
+                }\label{fig:reverse_graph}\end{minipage}},rotate=90,center}
+                \includegraphics[scale=.6]{diagrams/reverse_example.png}
+            \end{adjustbox}
         \end{figure}
 
-        Now we come to the map operations, which are more complicated.
-        Examine the computational graph in Figure \ref{fig:map_graph}, where we map a simple addition over an array.
-        In this figure, the map is displayed as a box, because in our trace maps are stored as separate sub-traces.
-        This might seem a little silly for a simple addition, but since maps can take any function (within the bounds of the DSL), we need to account for more complicated functions as well (e.g. including control flow, etc.)
-        Furthermore, highlighting the map as a box or context on its own highlights and interesting property: this context may access variables in the wider context.
-        We also need to consider the adjoints for these variables in the ``closure'' of the function.
-        While it might be tempting to just run our existing reverse pass functions on these sub-traces, we would still need to gather the adjoints into a single adjoint array as the adjoint for the original array.
-        Furthermore, it starts to become muddy what to do with variables that are used by the map, but are not contained within it, like $a$ in Figure \ref{fig:map_graph}.
-        We also do not want our reverse pass to start leaking out of the map operation: in Figure \ref{fig:map_graph}, this would happen if we accidentally continued our reverse pass for $a$, while that is actually out of scope of our map operation, and should be done by the main reverse pass.
-        Which leads us to another problem: what if a variable is only used in the context of a map (again like $a$ in Figure \ref{fig:map_graph}), if we do not follow it up within the reverse pass in the map, we need to add it to the queue of the main reverse pass.
-        In Figure \ref{fig:map_graph}, $a$ is an informal ancestor of the map operation, one that is not immediately obvious (especially not in more complex mapped functions).
-        
-        All this is why, in Listing \ref{lst:rev_maps}, we introduce the \texttt{seedMap} function, that is specifically made for continuing the reverse pass within a map.
-        It uses \texttt{seedAncestors} to still calculate and pass the adjoints within our map, but it makes sure only the straight-line function of a single item in the map is explored, any other variables that are used in the map trace are given their adjoints, but not explored: they are instead stored and added to the main reverse pass' queue.
-        It might be important to reiterate here that since these traces are single-line programs, and due to the nature of functional programming, only one ancestor of any action is within the context of the sub-trace, while all others should be from the main context.
-        Other items in the array that is mapped over are also considered in the main context, since the sub-traces only traces the map over a single item.
-        Very important is also that intermediate values in this context cannot escape this context in any ways.
-        They can not be used by other parts of the program, as they are all locked away in the map operation.
-        (If this were possible, it would violate the functional nature of the program.)
+        This gives us a global overview of how the reverse pass can be implemented, using the forward pass/trace we have discussed.
+        Now there are a couple of questions that remain:
+        \begin{itemize}
+            \item Can we always add adjoints together?
+            \item How do different operations differentiate?
+            \item How do we maintain data-parallelism in array operations?
+            \item How do we implement task-parallelism on the reverse pass? 
+        \end{itemize}
+        In the following subsections we will get to all these questions.
 
-        In Listing \ref{lst:rev_maps} we see this all coming together.
-        The \texttt{seedMap} function loops over the sub-traces to get their adjoints (and any outside variables that need visiting).
-        Then \texttt{seedMap'} uses \texttt{seedAncestors} to actually move the reverse pass through a single sub-trace, and to get the final adjoint.
-        The \texttt{findAncestor} function is used to find which of the found ancestors is actually in the sub-trace, and which ones come from outside the sub-trace's context.
+    \subsection{Combining Adjoints}
+        To go from a list of partial adjoints to a single combined adjoint is not quite as trivial as just adding all together.
+        As mentioned before, in Listing \ref{lst:reverse_def}, we defined three types of adjoints, an array, a sparse array, and a real number adjoint.
+        The real number adjoint is not complicated, it is the default adjoint and they can be freely added together.
+        The difficulty comes in with the array adjoints.
+        These adjoints are produced by operations on arrays.
+        It will help us to realize now that the adjoint of an array with length $n$, will also have length $n$.
+        In reality the adjoint array is no more than an array of adjoints for each item in the original array.
 
-        \begin{haskell}[caption={Functions for the reverse pass through maps. \texttt{seedMap} takes in the array of sub-traces used in the map, the current reverse map, the adjoint of the map's output array, the name of the map's output array, and an integer for keeping track of the index the function is currently on. It returns a 3-tuple containing the updated reverse map, the adjoint of the whole map operation, and a list of names of items that were affected by the map to add to the queue. \texttt{seedMap'} takes in a single sub-trace, the current reverse map, the adjoint of the map's output array, and the name of the map's output array. It also returns the a 3-tuple, with the updated array, the adjoint for this specific sub-trace, and a list of names of affected items in the trace.}, label=lst:rev_maps, gobble=12]
-            seedMap :: [Forward] -> Reverse -> Adjoint -> String -> Int
-                -> (Reverse, Adjoint, [String])
-            seedMap []     r _ _ _ = (r, AArray [], [])
-            seedMap (f:fs) r a s c =
-                let si                  = s ++ '!' : show c
-                    (AArray as)         = a
-                    ai                  = AReal (as !! c)
-                    (ra, AReal  aa, sa) = seedMap' f r ai si 
-                    (rr, AArray ar, sr) = seedMap fs ra s (c + 1)
-                in (rr, AArray aa : ar, sa ++ sr)
+        Knowing this we can start to discover how to add these adjoints together.
+        Let us start by discussing adding the sparse and non-sparse array adjoints, as they are almost as simple as adding two real adjoints.
+        Since we only add these together as partial adjoint of a single step in the computational graph, we know that the array adjoints whether sparse or not will always have the same length when added together.
+        This means we can just add these arrays of adjoints together elementwise, substituting $0$ for all undefined items in the sparse array.
 
-            seedMap' :: Forward -> Reverse -> Adjoint -> String
-                -> (Reverse, Adjoint, [String])
-            seedMap' f r a s =
-                let (rr, sr) = seedAncestors f r s a
-                    (sc, so) = findAncestor sr
-                in  case sc of
-                    Just sn -> 
-                        let (rf, af, sf) = seedMap' f rr (getAdjoint rr sn) sn
-                        in  (rf, af, so ++ sf)
-                    Nothing -> (rr, a, so)
+        Only if we add two sparse arrays together, we might need to look up the length of the original array in the forward pass to know the length of these sparse arrays (or we could extend the sparse array constructor to allow for multiple defined items).
+
+        Now the most interesting part comes when we want to add an array adjoint to a real adjoint, or vice versa.
+        Namely, there are two ways of doing this, which means that a binary adjoint addition operator is not associative.
+        For example, say we find ourselves folding the values in some array $a$ to some real value $b$.
+        In the reverse pass, the adjoint of $b$ will be a real adjoint, yet the adjoint of $a$ will have to be an array adjoint.
+        Now provided that $a$ has some partial array adjoint (or is represented by an adjoint array filled with zeroes) we must think of a way to add $b$ to the appropriate items.
+        Now what these appropriate items in $a$ are, and how $b$'s adjoint needs to be transformed, are of course dependent on the function we fold over array $a$.
+
+        However, we will find that fold takes in an anonymous function, meaning that we need a special case for fold anyways.
+        Only for our unary sum operator we perform a fold that is pre-programmed.
+        We know that the sum's result is influenced once by each array item, and from the differentiation rules of addition we know that the adjoint of the sum's result is just moved to its ancestors without transformation or touching intermediate values.
+        This means that we can just just add the sum's adjoint to each array item.
+
+        The only other way to get from an array to a real value in our language is by using array indexing.
+        However this is very simple as well, as indexing does not change anything to the adjoint either.
+        Since indexing refers to a specific item in the array, our partial adjoint for the array becomes a sparse array with the incoming adjoint on the indexed position.
+
+        We see the implementation of the helper function \texttt{combineAdjoints} in Figure \ref{lst:combine}, where we also define a binary adjoint addition operator \lstinline{(<+)} to do most of the heavy lifting.
+        It should be reiterated that the \lstinline{(<+)} operation adding a real to an array only works because it will only be called by the sum operator.
+
+        \begin{haskell}[caption=Adjoint combination operator and adjoint summation function, label=lst:combine, gobble=12]
+            (<+) :: Adjoint -> Adjoint -> Adjoint
+            (<+) (AArray as)   (AArray    bs) = AArray (zipWith (+) as bs)
+            -- Note: this works because it is only called by sum
+            (<+) (AArray as)   (AReal     bs) = AArray (map (+ b) as)
+            (<+) (AArray as)   (ASparse i bs) =
+                let bs = drop i as
+                in  AArray (take i as ++ (b + head bs) : tail bs)
+            (<+) (AReal  a)    (AArray    bs) = AReal (a + sum bs)
+            (<+) (AReal  a)    (AReal     b)  = AReal (a + b)
+            (<+) (AReal  a)    (ASparse _ b)  = AReal (a + b)
+            (<+) (ASparse i a) (AArray    bs) = 
+                let as = drop i bs
+                in  AArray (take i bs ++ (a + head as) : tail as)
+            (<+) (ASparse _ _) (AReal     _)  = error "Cannot combine sparse and real
+                adjoints, because the length of the sparse adjoint is unknown."
+            (<+) (ASparse _ _) (ASparse _ _)  = error "Cannot combine two sparse adjoints,
+                because the length of the sparse adjoints are unknown."
+
+            combineAdjoints :: String -> Forward -> Reverse -> (Adjoint, Reverse)
+            combineAdjoints s f r =
+                -- Get the partial adjoints and combine them together
+                let (as, _) = r Map.! s
+                    a       = foldr (<+) empty as
+                -- And add the completed adjoint to the reverse map
+                in  (a, Map.insert s (as, Just a) r)
                 where
-                    getAdjoint :: Reverse -> String -> Adjoint
-                    getAdjoint r s = case Map.lookup s r of
-                        Just (_, a) -> a
-                        Nothing     -> ANull
-                    
-                    findAncestor :: [String] -> (Maybe String, [String])
-                    findAncestor []     = (Nothing, [])
-                    findAncestor (c:cs) =
-                        let (cr, crs) = findAncestor cs
-                        in  case cr of
-                            Just cr' -> if cr' == c then (cr, crs) else (cr, c : crs)
-                            Nothing  ->
-                                if   Map.member c f 
-                                then (Just c, crs)
-                                else (Nothing, c : crs)
+                    -- Provide an empty identity element
+                    empty :: Adjoint
+                    empty = case getValue s f of
+                        -- Check the intermediate value of s to reveal the right identity element
+                        (FArray _ xs) -> AArray (replicate (length xs) 0.0)
+                        (FReal  {})   -> AReal  0.0
+                        _             -> error "Type mismatch in combineAdjoints/empty"
         \end{haskell}
 
-        For vectorized maps (\texttt{FMapV} in the forward pass) the process is very similar, however we now use the single sub-trace to calculate the adjoints.
-        Since the essence of the vectorization means that all items in the array follow the same path, we can calculate the adjoint for each item at the same time using data parallelism.
+    \clearpage
+    \subsection{Differentiating Operations}
+        The actual differentiation rules are applied in the \texttt{assignAdjoints} function, where we take the complete adjoint of a node in the computational graph, transform it according to the operation performed in that node, and then add it as a partial adjoint to its ancestors.
+        Its especially the transformation that means we need to write different differentiation rules for almost every operation.
 
-        We mentioned transforming and combining adjoints briefly before, but it is something we should look into further.
-        First off, as mentioned before, adjoints of real numbers need to be real numbers, and adjoints of arrays need to be arrays as well.
-        However, some operations in our DSL transform an array into a single number (like sum or indexing), meaning the reverse derivative needs to transform these adjoints from real numbers back into arrays.
-        The functions \texttt{toSingle} and \texttt{toArray} in Listing \ref{lst:combine} make these transformations, or assure the adjoints are in the right shape.
-        The \texttt{toArray} also takes in an integer that represents the length of the array, as we need the adjoint arrays to be the same size of the primal arrays.
-        % TODO: Check if the uses of toArray provide the length of the array
+        Let us start with the easy part, the unary and binary mathematical operators.
+        In our DSL these are: addition, multiplication, subtraction, and sine.
+        Recall that the rules for addition and subtraction are similar, they just transform homomorphically, which means that any adjoint is just ``passed'' to their ancestors without any additional transformation.
+        See the examples in Equation \ref{eq:diff_add}.
 
-        Furthermore, we also need to sum partial adjoints into a single adjoint.
-        This is fairly simple to do for real values, which happens in \texttt{sumAdjoints} in Listing \ref{lst:combine}.
-        The arrays are little more in-depth however, since they need to be summed up element-wise.
-        This is what happens in \texttt{combineAdjoints}.
-        We also define a utility function \texttt{combineOrSumAdjoints} which looks at the current step from the trace to determine whether \texttt{combineAdjoints} or \texttt{sumAdjoints} should be used.
-        
-        \begin{haskell}[caption={Functions to transform and combine adjoints. \texttt{combineOrSumAdjoints} takes in a step in a trace, and its list of adjoints, and then uses either \texttt{sumAdjoints} or \texttt{combineAdjoints} to return the adjoint for that step. \texttt{combineAdjoints} combines the input adjoints into a single array adjoint. \texttt{sumAdjoints} sums its input adjoints to a single real adjoint. \texttt{toSingle} takes in an adjoint, transforms it into a real adjoint if necessary, and then returns that real as a float. \texttt{toArray} takes in an adjoint and an integer representing length and transforms these into an array adjoint, returning that array adjoint as an array of floats.}, label=lst:combine, gobble=12]
-            combineOrSumAdjoints :: Forwarded -> [Adjoint] -> Adjoint
-            combineOrSumAdjoints (FOp1  Idx _) = combineAdjoints
-            combineOrSumAdjoints (FOp1  Sum _) = combineAdjoints
-            combineOrSumAdjoints (FMap  _   _) = combineAdjoints
-            combineOrSumAdjoints (FMapV _   _) = combineAdjoints
-            combineOrSumAdjoints _             = sumAdjoints
+        \begin{equation} \label{eq:diff_add}
+            \begin{aligned}
+                \frac{d(x+y)}{dz}&=\frac{dx}{dz}+\frac{dy}{dz}\\
+                \frac{d(x-y)}{dz}&=\frac{dx}{dz}-\frac{dy}{dz}
+            \end{aligned}
+        \end{equation}
 
-            combineAdjoints :: [Adjoint] -> Adjoint
-            combineAdjoints [x]     = x
-            combineAdjoints (x:y:z) = combineAdjoints (ca x y : z)
-                where
-                    ca :: Adjoint -> Adjoint
-                    ca (AArray as) (AArray bs)   = AArray (zipWith (+) as bs)
-                    ca (AArray as) (ASparse i b) = AArray
-                        (take index as ++ [as !! index + b] ++ drop (index + 1) as)
-                    ca (ASparse i b) (AArray as) = AArray
-                        (take index as ++ [as !! index + b] ++ drop (index + 1) as)
-                    ca _           _             = error "Can only sum arrays"
+        Multiplication and sine are slightly more complicated, both requiring some intermediate value to compute the derivative.
+        We have gone over multiplication before, we multiply the incoming adjoint with intermediate value of the other side of the multiplication.
+        See the example in Equation \ref{eq:diff_mul}.
+
+        \begin{equation} \label{eq:diff_mul}
+            \frac{d(x\cdot y)}{dz}=y\cdot\frac{dx}{dz}+x\cdot\frac{dy}{dz}
+        \end{equation}
+
+        The derivative of a sine operation is the cosine on the intermediate value, see Equation \ref{eq:diff_sin}.
+
+        \begin{equation} \label{eq:diff_sin}
+            \frac{d(\sin x)}{dy}=\cos x\cdot\frac{dx}{dy}
+        \end{equation}
+
+        These are the mathematical operations that we may encounter in the trace.
+        Recall that we traced away Booleans, so we do not have to worry about comparison operators.
+        With these derivatives cleared up we can now program them into \texttt{assignAdjoints}.
+        It is also useful to remember that \texttt{assignAdjoints} should return both the updated reverse mapping, and a list containing the ancestors of the provided node.
+        We see the implementation in Listing \ref{lst:assign_simple}.
+        This uses another helper function called \texttt{addAdjoint}, which simply just adds the calculated partial adjoint to the list of partial adjoints of the relevant ancestor in the reverse mapping.
+
+        \begin{haskell}[caption={Defining \texttt{assignAdjoints} for sine, addition, subtraction, and multiplication.}, label=lst:assign_simple, gobble=12]
+            assignAdjoints :: Forwarded -> String -> Adjoint -> Forward -> Reverse
+                -> (Reverse, [String])
+            -- Adjoint function for all unary operators (now only showing sine)
+            assignAdjoints (FOp1 op s1) _ a f r = case (op, a) of
+                (Sin, AReal a') -> case getValue s1 f of
+                    -- Take the intermediate value and assign the adjoint to s1, also return
+                    -- the list of ancestors: s1
+                    (FReal _ x) -> (addAdjoint s1 (AReal $\$$ a' * cos x) r, [s1])
+                    _           -> error "Type mismatch in assignAdjoints/FOp1/Sin"
+                _               -> error "Type mismatch in assignAdjoints/FOp1"
             
-            sumAdjoints :: [Adjoint] -> Adjoint
-            sumAdjoints [x]     = x
-            sumAdjoints (x:y:z) = sumAdjoints (sa x y : z)
-                where
-                    sa :: Adjoint -> Adjoint -> Adjoint
-                    sa (AReal rx) (AReal ry) = AReal (rx + ry)
-                    sa _          _          = error "Can only sum singles"
-    
-            toSingle :: Adjoint -> Float
-            toSingle (AArray vs)   = sum vs
-            toSingle ANull         = error "Tried to simplify null adjoint"
-            toSingle (AReal v)     = v
-            toSingle (ASparse _ v) = v
-    
-            toArray :: Adjoint -> Int -> [Float]
-            toArray (AArray v) l =
-                if   length v == l
-                then v
-                else error "Array of wrong length"
-            toArray ANull        l = error "Tried to make array from null adjoint"
-            toArray (AReal v)    l = repeat l v
-                where
-                    repeat :: Int -> Float -> [Float]
-                    repeat 0 _ = []
-                    repeat i v = v : repeat (i - 1) v
-            toArray (ASparse i v) l = take i zeroes ++ [v] ++ take (l - i - 1) zeroes
-                where
-                    zeroes :: [Float]
-                    zeroes = 0.0 : zeroes
+            -- Adjoint function for all binary operators
+            assignAdjoints (FOp2 op s1 s2) _ a f r = case (op, a) of
+                -- Just add the adjoint to both ancestors
+                (Add, _)        -> (addAdjoint s1 a (addAdjoint s2 a r), [s1, s2])
+                -- For multiplication, get the intermediate values first
+                -- we also deconstruct the adjoint, knowing it is a real number because
+                -- (sin x) would return a real number.
+                (Mul, AReal a') -> case (getValue s1 f, getValue s2 f) of
+                    (FReal _ v1, FReal _ v2) ->
+                        (addAdjoint s1 (AReal (a' * v2)) (addAdjoint s2 (AReal a' * v1) r), 
+                        [s1, s2])
+                    _                        ->
+                        error "Type mismatch in assignAdjoints/FOp2/Mul"
+                -- Similar to addition, only s2 gets a negative adjoint
+                (Sub, AReal a') -> (addAdjoint s1 a (addAdjoint s2 (AReal -a') r), [s1, s2])
+                _               -> error "Type mismatch in assignAdjoints/FOp2"
         \end{haskell}
 
-        With this we have covered all possible statements in our forward-pass trace, meaning we could use the \texttt{reverse} function to find all the adjoints from a given trace.
-        The map it returns allows us to look up any adjoint in the trace, most importantly the adjoints of the input variables, which form the gradient of the function.
+        Another adjoint we should quickly cover is that of array indexing.
+        As mentioned before, nothing happens to an intermediate value when it is indexed, so its adjoint will not be transformed either.
+        While obvious, the adjoint of the indexed value should only be added to the that specific index in the array's adjoint.
+        This is where our sparse adjoint comes in, where we represent a single item in the array without storing anything extra.
+        We can see how it is used by \texttt{assignAdjoints} for indexing in Listing \ref{lst:assign_idx}.
+
+        \begin{haskell}[caption={Defining \texttt{assignAdjoints} for the indexing operation}, label=lst:assign_idx, gobble=12]
+            assignAdjoints :: Forwarded -> String -> Adjoint -> Forward -> Reverse
+                -> (Reverse, [String])
+            assignAdjoints (FOp1 op s1) _ a f r = case (op, a) of
+                -- Add the sparse array and return the name of the array as ancestor
+                (Idx i, AReal a') -> (addAdjoint s1 (ASparse i a') r, [s1])
+                $\dots$
+            $\dots$
+        \end{haskell}
+
+        % NOTE: While an implementation detail, FJoin (also unmentioned in the forward pass) has a simple adjoint too, used by FFold and FFoldV
+
+        \subsubsection{The reverse pass on map operations and function closures}
+            Unsurprisingly, the reverse pass is slightly more in-depth on array operations, like map.
+            For a regular non-vectorized map, this is still fairly easy to wrap our heads around.
+            Especially if we remember that our forward-pass provides us with the following constructor for such maps:
+            \lstinline[language=haskell]{FMap [Forward] String}.
+            Here we store every application of the mapped function to our array as its own sub-trace.
+            Now it becomes easy to realize that the simplest way to reverse-pass over this mapping is just to call the \texttt{reverse} function on each of these forward sub-traces.
+            This then provides us immediately with the adjoint of each original array item, which we can combine into an array adjoint for the original array.
+            We give this array adjoint as a partial adjoint to the original array (as it is the ancestor of the mapping operation).
+            It should be explicitly stated that mapping the \texttt{reverse} function reveals the derivative of a map: another map, but in reverse.
+
+            However, there is a slight obstacle yet to overcome; to do with the mapped function.
+            What do we do if the function that is mapped over the array uses variables from anywhere outside the actual array?
+            Recall that the functions that are mapped are lambda expressions that have access to any variables in the environment at the function's definition.
+            As an example, we can see this expressed in Figure \ref{fig:map_graph}, where some mapped operation on an array $[b]$ uses a variable $a$ to produce the array $[c]$.
+            While the partial adjoints for this variable are computed during the reverse pass over every item, they are only stored in the reverse mapping for the particular item.
+            And if we extract only the adjoint for the original array item from this reverse mapping, we would throw away these partial adjoints, making it possibly impossible for us to calculate the full reverse-pass of the program, as we will not be able to calculate the adjoint for these outside variables.
+            We find that these variables, like $a$ in \ref{fig:map_graph} are ``unofficial ancestors'' of the mapping operation.
+            They are used by the mapping operations, but can be a little hard to find, as they are hidden in the sub-traces.
+
+            \begin{figure}[htb]
+                \centering
+                \includegraphics[width=0.6\textwidth]{diagrams/map_example.png}
+                \caption{Example of an unofficial ancestor to an array operation}
+                \label{fig:map_graph}
+            \end{figure}
+
+            Luckily for us the main difficulty with this problem is noticing it.
+            Now we know that we have to extract this data into the main reverse pass, we can simply merge the item's reverse pass with the main one.
+            We only need to be wary of extracting the partial adjoints for the original map, and combining them together, so we do not overcount the number of partial adjoints against the reference counter of the original array (that in the forward pass only got increased by one for use in the map operation.)
+            We see the whole process of finding the adjoint of a map in Listing \ref{lst:assign_map}.
+
+            \begin{haskell}[caption=Implementation of \texttt{assignAdjoints} for the map operation, label=lst:assign_map, gobble=16]
+                assignAdjoints :: Forwarded -> String -> Adjoint -> Forward -> Reverse
+                -> (Reverse, [String])
+                $\dots$
+                assignAdjoints (FMap fss s1) s a _ r =
+                    let (as, r', ss) = reverseMap fss 0
+                        -- Fold sparse adjoints into single array adjoint
+                        a' = foldl (<+) (AArray $\$$ replicate (length fss) 0.0) as
+                    in  (addAdjoint s1 a' r', Set.toList ss)
+                    where
+                        reverseMap :: [Forward] -> Int -> ([Adjoint], Reverse, Set String)
+                        reverseMap []     _ = ([], r, Set.empty)
+                        reverseMap (f:fs) i =
+                            let s'  = s ++ '!' : show i
+                                rx  = reverse f s' (indexAdjoint i a)
+                                -- Extract the array item for 
+                                ax  = toSparse i $\$$ fst $\$$ combineAdjoints s' f rx
+                                -- Remove items from the original and destination array from this reverse pass
+                                -- and add the array items partial adjoint
+                                rx' = Map.delete s' (Map.delete (s1 ++ '!' : show i) rx)
+                                -- Find the results of the rest of the map
+                                (axs, rxs, sxs) = reverseMap fs (i + 1)
+                            in  (
+                                -- Add this sparse partial to the list
+                                ax : axs,
+                                -- Add rx' to the main reverse pass
+                                Map.unionWith unionReverse rxs rx',
+                                -- Add relevant keys to the set of ancestors
+                                Set.union sxs $\$$ Map.keysSet rx'
+                            )
+                        toSparse :: Int -> Adjoint -> Adjoint
+                        toSparse i (AReal a') = ASparse i a'
+                        toSparse _ _          =
+                            error "Type mismatch in assignAdjoints/FMap/toSparse"
+            \end{haskell}
+
+            Now with the nonvectorized map taken care of, we can move on to the vectorized map.
+            While the idea of finding the adjoint to the map remains the same of course, we now find ourselves with a new problem: a lack of intermediate values.
+            Recall that when tracing a vectorized map, we only stored the trace of a single item in the array.
+            This was possible because, as we had found the mapped function would not branch, the trace would be the same for each item.
+            Now, provided that we did store all intermediate values for this mapping operation, we can perform the same reverse map for the vectorized trace, as with the nonvectorized trace.
+
+            \paragraph*{On Parallelism}
+                It should be clear that there is a major inherent parallelism opportunity for each of the mapping operations.
+                For the vectorized map this is very clear: data parallelism.
+                This is true in evaluation, and is still true in the reverse-pass.
+                Namely as the reverse pass is the same for all items, we can use a data parallel mapping function to run the reverse pass in a vectorized manner as well.
+
+                For the nonvectorized map we cannot be sure the operations are the same for each item.
+                This means that data parallelism is off the table, however we can still use task parallelism.
+                This would not be hard to implement as each item has its own reverse call which can easily be run task parallel.
+                Of course, one would need to exercise some caution with the collection of the partial adjoints and reverse maps, but this is not a new problem.
+                The combination of the partial adjoints would still need to happen sequentially.
+
+                We will talk more about parallelism when we talk about the reverse map on folds.
+
+        \subsubsection{The reverse pass on fold operations}
+            Hello, world!
+
