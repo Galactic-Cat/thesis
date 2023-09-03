@@ -10,18 +10,16 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
 
     data Adjoint
         = AArray  [Float]
-        | ANull
         | AReal   Float
         | ASparse Int Float
     
     instance Show Adjoint where
         show :: Adjoint -> String
         show (AArray    as) = "(AArray " ++ show as ++ ")"
-        show ANull          = "ANull"
         show (AReal     a)  = "(AReal " ++ show a ++ ")"
         show (ASparse i a)  = "(ASparse " ++ show i ++ " " ++ show a ++ ")"
 
-    type Reverse = Map String ([Adjoint], Adjoint)
+    type Reverse = Map String ([Adjoint], Maybe Adjoint)
 
     -- Operator to combine two adjoints together
     -- NOTE: The resulting adjoint is shaped like the first argument (not associative)
@@ -33,15 +31,13 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
     (<+) (AReal     a)  (AReal     b)  = AReal $ a + b
     (<+) (AReal     a)  (ASparse _ b)  = AReal $ a + b
     (<+) (ASparse i a)  (AArray    bs) = let as = drop i bs in AArray (take i bs ++ (a + head as) : tail as)
-    (<+) (ASparse _ _)  (AReal     _)  = error "Cannot combine sparse ajdoint with real adjoint, because length of adjoint array is unknown"
-    (<+) (ASparse _ _)  (ASparse _ _)  = error "Cannot combine sparse ajdoint with sparse adjoint, because length of adjoint array is unknown"
-    (<+) ANull          a              = error $ "Tried to combine null adjoint with " ++ show a
-    (<+) a              ANull          = error $ "Tried to combine adjoint " ++ show a ++ " with null adjoint"
+    (<+) (ASparse _ _)  (AReal     _)  = error "Cannot combine sparse adjoint with real adjoint, because length of adjoint array is unknown"
+    (<+) (ASparse _ _)  (ASparse _ _)  = error "Cannot combine sparse adjoint with sparse adjoint, because length of adjoint array is unknown"
 
     addAdjoint :: String -> Adjoint -> Reverse -> Reverse
     addAdjoint s a r = case Map.lookup s r of
-        Just (as, _) -> Map.insert s (a : as, ANull) r
-        Nothing      -> Map.insert s ([a], ANull) r
+        Just (as, _) -> Map.insert s (a : as, Nothing) r
+        Nothing      -> Map.insert s ([a], Nothing) r
 
     assignAdjoints :: Forwarded -> String -> Adjoint -> Forward -> Reverse -> (Reverse, [String])
     assignAdjoints (FOp1 op s1) _ a f r = case (op, a) of
@@ -59,7 +55,7 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
         (Mul, AReal a') -> case (getValue s1 f, getValue s2 f) of
             (FReal _ v1, FReal _ v2) -> (addAdjoint s1 (AReal $ a' * v2) (addAdjoint s2 (AReal $ a' * v1) r), [s1, s2])
             _                        -> error "Type mismatch in assignAdjoints/FOp2/Mul"
-        (Sub, _)        -> (addAdjoint s1 a (addAdjoint s2 a r), [s1, s2])
+        (Sub, AReal a') -> (addAdjoint s1 a (addAdjoint s2 (AReal $ -a') r), [s1, s2])
         _               -> error "Type mismatch in assignAdjoints/FOp2"
     
     assignAdjoints (FMap fss s1) s a _ r =
@@ -78,41 +74,44 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
             toSparse i (AReal a') = ASparse i a'
             toSparse _ _          = error "Type mismatch in assignAdjoints/FMap"
 
-    assignAdjoints (FMapV f' s1) s a f r = error "Couldn't figure out implementation for FMapV"
+    assignAdjoints (FMapV f' s1) s a f r = error "Couldn't figure out implementation for FMapV yet"
 
     assignAdjoints (FFold f s1 s2) s a _ r =
         let r' = reverse f s a
-            a' = snd $ r' Map.! s1
-        in  case Map.lookup s2 r' of
-            Just (_, z') -> (addAdjoint s1 a' (addAdjoint s2 z' r), [s1, s2])
-            Nothing      -> (addAdjoint s1 a' r, [s1])
+            ma = snd $ r' Map.! s1
+        in  case (Map.lookup s2 r', ma) of
+            (Just (_, Just z'), Just a') -> (addAdjoint s1 a' (addAdjoint s2 z' r), [s1, s2])
+            (Nothing,           Just a') -> (addAdjoint s1 a' r, [s1])
+            _                            -> error "Type mismatch in assignAdjoints/FFold"
 
     assignAdjoints (FFoldV f1 q f2 s1 s2) s a _ r =
         if   Map.null f2
         then let r' = reverse f1 s a
-                 a' = snd $ r' Map.! s1
-                 z' = snd $ r' Map.! s1
-             in  (addAdjoint s1 a' (addAdjoint s2 z' r), [s1, s2])
+                 ma = snd $ r' Map.! s1
+                 mz = snd $ r' Map.! s1
+             in  case (ma, mz) of
+                 (Just a', Just z') -> (addAdjoint s1 a' (addAdjoint s2 z' r), [s1, s2])
+                 _                  -> error "Type mismatch in assignAdjoints/FFoldV (1)"
         else let r2 = reverse f2 s a
                  a2 = snd $ r2 Map.! q
                  ss = getJoin
-                 (a1s, z') = getParts ss a2
+                 (a1s, z') = getParts ss $ justify a2 "assignAdjoints/FFoldV"
                  a1 = foldl (<+) (AArray $ replicate (Map.size f1) 0.0) a1s
              in  (addAdjoint s1 a1 (addAdjoint s2 z' r), [s1, s2])
         where
             getJoin :: [String]
             getJoin = case f2 Map.! q of
                 (FJoin ss, _, _) -> ss
-                _                -> error "Type mismatch in assignAdjoints/FFoldV"
+                _                -> error "Type mismatch in assignAdjoints/FFoldV (2)"
             getParts :: [String] -> Adjoint -> ([Adjoint], Adjoint)
             getParts []      _              = ([], AReal 0.0)
             getParts (s':ss) (AArray (a':as)) =
                 let r'  = reverse f1 s' (AReal a')
-                    a'' = snd $ r' Map.! s'
+                    a'' = justify (snd $ r' Map.! s') "assignAdjoints/FFoldV/getParts"
                     (ra, z') = getParts ss (AArray as)
                 in  case Map.lookup s2 r' of
-                    Just (_, z'') -> (a'' : ra, z' <+ z'')
-                    Nothing       -> (a'' : ra, z')
+                    Just (_, Just z'') -> (a'' : ra, z' <+ z'')
+                    _                  -> (a'' : ra, z')
 
     assignAdjoints (FJoin  sss) _ a _ r = (assignAll sss a, sss)
         where
@@ -125,7 +124,7 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
     combineAdjoints s f r =
         let (as, _) = r Map.! s
             a       = foldr (<+) empty as
-        in  (a, Map.insert s (as, a) r)
+        in  (a, Map.insert s (as, Just a) r)
         where
             empty :: Adjoint
             empty = case getValue s f of
@@ -145,18 +144,22 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
     indexAdjoint _ (AArray [])     = error "Out of range in indexAdjoint"
     indexAdjoint _ _               = error "Type mismatch in indexAdjoint"
 
+    justify :: Maybe a -> String -> a
+    justify (Just a) _ = a
+    justify Nothing  s = error $ "Failed to justify at " ++ s
+
     -- Checks if an adjoint has all its parts ready, and combines them if necessary
     resolve :: String -> Forward -> Reverse -> Reverse
     resolve s f r = case Map.lookup s r of
-        Just (as, ANull) -> case Map.lookup s f of
+        Just (as, Nothing) -> case Map.lookup s f of
             Just (fd, c, _) -> if   length as >= c 
                                then let (a,  r1) = combineAdjoints s f r
                                         (r2, sa) = assignAdjoints fd s a f r1
                                     in  explore sa r2
                                else r
             Nothing         -> error $ "Variable " ++ show s ++ " not in forward trace:\n" ++ show f
-        Just _           -> r
-        Nothing          -> r
+        Just _             -> r
+        Nothing            -> r
         where
             explore :: [String] -> Reverse -> Reverse
             explore []      r' = r'
@@ -165,4 +168,4 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
     -- Wrapper function for the overall reverse pass
     -- Adds the final adjoint to the an empty reverse map so it can be resolved
     reverse :: Forward -> String -> Adjoint -> Reverse
-    reverse f s a = resolve s f $ Map.singleton s ([a], ANull)
+    reverse f s a = resolve s f $ Map.singleton s ([a], Nothing)
