@@ -503,7 +503,7 @@
 
             \begin{haskell}[caption=Implementation of \texttt{assignAdjoints} for the map operation, label=lst:assign_map, gobble=16]
                 assignAdjoints :: Forwarded -> String -> Adjoint -> Forward -> Reverse
-                -> (Reverse, [String])
+                    -> (Reverse, [String])
                 $\dots$
                 assignAdjoints (FMap fss s1) s a _ r =
                     let (as, r', ss) = reverseMap fss 0
@@ -558,5 +558,84 @@
                 We will talk more about parallelism when we talk about the reverse map on folds.
 
         \subsubsection{The reverse pass on fold operations}
-            Hello, world!
+            The regular fold operator in our language (for branching functions) is simply implemented as a sequential left-to-right fold.
+            This is mainly because we can not reliably apply data parallelism on a function that may behave differently for different elements.
+            However, this makes the reverse-pass over such a fold extremely easy, since this operation can be captured in a single forward sub-trace.
+            Like what we saw with maps, we can just run our general \texttt{reverse} function over this sub-trace, and find the adjoint for the original array, and the identity element.
+            Also like with maps, we can then combine this reverse mapping with the main reverse mapping to make sure we do not lose out of any adjoints for informal ancestors that may arise from the closure on the folding function.
+            We see this put into code in Listing \ref{lst:assign_fold}.
+
+            \begin{haskell}[caption=Reverse pass over a sequential fold, label=lst:assign_fold, gobble=16]
+                assignAdjoints :: Forwarded -> String -> Adjoint -> Forward -> Reverse
+                    -> (Reverse, [String])
+                $\dots$
+                assignAdjoints (FFold f s1 s2) s a _ r =
+                        -- Get the reverse mapping
+                    let rf = reverse f s a
+                        -- Extract the adjoint for the array and the identity elements
+                        aa = fromJust $\$$ snd $\$$ rf Map.! s1
+                        az = fromJust $\$$ snd $\$$ rf Map.! s2
+                        -- Combine the reverse map with the main reverse map
+                        r' = Map.unionWith unionReverse r (Map.delete s1 (Map.delete s2 rf))
+                    in  (addAdjoint s1 aa (addAdjoint s2 az), [s1, s2])
+            \end{haskell}
+
+            \cc{Dit neemt aan een stukje in de tracing bestaat over waarom een vectorized fold maar uit twee stappen bestaat, maar dat moet ik er nog bij schrijven (inclusief alle referenties naar fold in het algemeen)}
+            As discussed, our vectorized fold operation uses a segmented fold followed by a sequential fold.
+            Of course if we have more threads available than we have items in our array, we use a sequential fold instead.
+            Since in the reverse-pass we pass over the second step before the first step, it is important to recall that to properly gather the results from the first step sub-traces, we use an \texttt{FJoin} constructor, which we can use in the reverse pass to pass the adjoints back to the correct sub-trace.
+            We can see this all come together in the implementation in Listing \ref{lst:assign_foldv}.
+            
+            \begin{haskell}[caption=Reverse pass over a vectorized fold, label=lst:assign_foldv, gobble=16]
+                assignAdjoints :: Forwarded -> String -> Adjoint -> Forward -> Reverse
+                    -> (Reverse, [String])
+                $\dots$
+                assignAdjoints (FFoldV f1 q f2 s1 s2) s a _ r =
+                    if   Map.null f2
+                    -- If the forward pass for step 2 is empty, we used a sequential fold
+                    then let rf = reverse f1 s a
+                             -- Extract the adjoint for the array and the identity elements
+                             aa = fromJust $\$$ snd $\$$ rf Map.! s1
+                             az = fromJust $\$$ snd $\$$ rf Map.! s2
+                             -- Combine the reverse map with the main reverse map
+                             r' = Map.unionWith unionReverse r 
+                                (Map.delete s1 (Map.delete s2 rf))
+                         in  (addAdjoint s1 aa (addAdjoint s2 az), [s1, s2])
+                    -- If not we are dealing with a proper vectorized fold
+                             -- Reverse pass over the second step first
+                    else let r2 = reverse f2 s a
+                             -- Extract the adjoint for the join from step 2
+                             a2 = fromJust $\$$ snd $\$$ r2 Map.! q
+                             -- Combine the reverse map for step 2 with the main one
+                             r' = Map.unionWith unionReverse r (Map.delete q r2)
+                             -- Get the join's contents
+                             ss = getJoin
+                             -- Get the update reverse mapping, the partial adjoints of the array,
+                             -- and the adjoint of the identity element.
+                             (r'', a1s, z') = getParts ss (fromJust a2) r'
+                             -- Combine the partial adjoints for the array into one
+                             a1 = foldl (<+) (AArray $\$$ replicate (Map.size f1) 0.0) a1s
+                         in  (addAdjoint s1 a1 (addAdjoint s2 z' r''), [s1, s2])
+                    where
+                        getJoin :: [String]
+                        getJoin = case f2 Map.! q of
+                            (FJoin ss, _, _) -> ss
+                            _                -> error "Type mismatch in assignedAdjoints/FFoldV"
+                        
+                        -- Get the updated reverse mapping, the adjoint for the array,
+                        -- and the adjoint for the identity element
+                        getParts :: [String] -> Adjoint -> Reverse 
+                            -> (Reverse, [Adjoint], Adjoint)
+                        getParts []      _                rv = (rv, [], AReal 0.0)
+                        getParts (s':ss) (AArray (a':as)) rv =
+                            let rx = reverse f1 s' (AReal a')
+                                ax = fromJust $\$$ snd $\$$ rx Map.! s'
+                                (rxs, axs, zxs) = getParts
+                                rx' = Map.unionWith rxs (Map.delete s1 (Map.delete s2 rx))
+                            in  case Map.lookup s2 rx of
+                                -- Update the adjoint for the identity element only if it was used
+                                -- by this segment.
+                                Just (zs, _) -> (rx', ax : axs, foldl (<+) zxs zs)
+                                Nothing      -> (rx', ax : axs, zxs)
+            \end{haskell}
 
