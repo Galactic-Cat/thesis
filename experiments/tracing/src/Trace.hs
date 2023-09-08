@@ -1,5 +1,5 @@
 {-# LANGUAGE InstanceSigs #-}
--- {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 module Trace (
     evalTrace,
     evalTrace',
@@ -28,23 +28,28 @@ module Trace (
             EOp0,
             EOp1,
             EOp2,
+            EOp3,
             ERef
         ),
         EValue (EArray, EBool, EReal),
         Op0 (Iota),
-        Op1 (Idx, Neg, Sin, Sum),
+        Op1 (Idx, Neg, Sin, Sum, Gen),
         Op2 (Add, Equ, Gt, Gte, Lt, Lte, Map, Mul, Neq, Sub),
+        Op3 (Fold),
         EEnvironment)
 
     -- import qualified Debug.Trace as Debug (trace)
 
     data Traced
-        = TLift TValue                                              -- Literals
-        | TOp0  Op0                                                 -- Nullary operators
-        | TOp1  Op1     String                                      -- Unary operators
-        | TOp2  Op2     String String                               -- Binary operators
-        | TMap  [Trace] String                                      -- Regular or naïve map tracing
-        | TMapV Trace   String                                      -- Vectorized map tracing
+        = TLift  TValue                                             -- Literals
+        | TOp0   Op0                                                -- Nullary operators
+        | TOp1   Op1      String                                    -- Unary operators
+        | TOp2   Op2      String String                             -- Binary operators
+        | TMap   [Trace]  String                                    -- Regular or naïve map tracing
+        | TMapV  Trace    String                                    -- Vectorized map tracing
+        | TFold  Trace    String String                             -- Regular fold tracing
+        | TFoldV [Trace]  String Trace  String String               -- Vecotrized (segmented) fold tracing
+        | TJoin  [String]                                           -- Helper object for vectorized folding
         deriving (Show)
 
     data TValue
@@ -104,19 +109,20 @@ module Trace (
             _         -> error "Type mismatch in trace'/EApply"     -- If not report a type error
 
     trace' n c k (EIf e1 e2 e3) =
-        let (v1, _, _) = trace' n c k e1                            -- Get the value of the e1
+        let (v1, _, _) = trace' n c k e1                          -- Get the value of the e1
         in  case v1 of
-            (TBool _ True)  -> trace' n c k e2                      -- If it is a Boolean, and it is true, trace e2
-            (TBool _ False) -> trace' n c k e3                      -- If it is a Boolean, but it is false, trace e3 instead
-            _               -> error "Type mismatch in trace'/EIf"  -- If it is not a Boolean, report a type error
+            TBool _ True  -> trace' n c k e2                      -- If it is a Boolean, and it is true, trace e2
+            TBool _ False -> trace' n c k e3                      -- If it is a Boolean, but it is false, trace e3 instead
+            _             -> error "Type mismatch in trace'/EIf"  -- If it is not a Boolean, report a type error
 
     trace' n c k (ELambda s1 e1) =
         let b = branchCheck (Map.insert s1 (TReal s1 0) n) k e1     -- Insert a psuedo variable for branch checking
             f = TFunc b (\x c' -> trace' (Map.insert s1 x n) c' k e1)
         in  (f, [], c)
 
-    trace' n c k (ELet s1 e1 e2) = trace' (Map.insert s1 v1 n) c1 k e2 <:> t1 -- Add the trace of e1 to that of e2
-        where (v1, t1, c1) = trace' n c k e1
+    trace' n c k (ELet s1 e1 e2) =
+        let (v1, t1, c1) = trace' n c k e1
+        in  trace' (Map.insert s1 v1 n) c1 k e2 <:> t1 -- Add the trace of e1 to that of e2
 
     trace' _ c k (ELift v1)      =
         let s1 = 'r' : show c
@@ -140,6 +146,19 @@ module Trace (
         let (v1, t1, c1) = trace' n c k e1                          -- Trace e1 first
             s = 'r' : show c1                                       -- Create a name for later use
         in  case (op, v1) of
+            (Gen i, TFunc b f)   ->
+                let v' = [0 .. fromIntegral (i - 1)]
+                    s' = 'r' : show c1
+                in  if   k
+                    then if   b
+                         then let (v2, t2s, c2) = traceMapNaive f (c1 + 1) s s' v' 0
+                                  t3            = [(s, TOp0 (Iota i)), (s', TMap t2s s)]
+                              in  (v2, t1 ++ t3, c2)
+                         else let (v2, t2, c2) = traceArrayMap f (c1 + 1) s s' v' 0
+                                  t3           = [(s, TOp0 (Iota i)), (s', TMapV t2 s)]
+                              in  (v2, t1 ++ t3, c2)
+                    else let (v2, t2s, c2) = traceMapNaive f (c1 + 1) s s' v' 0
+                         in  (v2, foldl (++) t1 t2s, c2)
             (Idx i, TArray s1 a) ->
                 if   k
                 then (TReal s $ a !! i, (s, TOp1 op s1) : t1, c1 + 1)  -- Keep indexing in the trace if we're also tracing arrays
@@ -177,6 +196,22 @@ module Trace (
             (Neq, TReal s1 a, TReal  s2 b) -> (TBool s $ a /= b, (s, TOp2 Neq s1 s2) : t2, c2 + 1)
             (Sub, TReal s1 a, TReal  s2 b) -> (TReal s $ a -  b, (s, TOp2 Sub s1 s2) : t2, c2 + 1)
             (_,   _,          _)          -> error "Type mismatch in trace'/EOp2"
+    
+    trace' n c k (EOp3 Fold e1 e2 e3) =
+        let (v1, t1, _)  = trace' n c k e1
+            (v2, t2, _)  = trace' n c k e2 <:> t1
+            (v3, t3, c3) = trace' n c k e3 <:> t2
+            s            = 'r' : show c3
+        in  case (v1, v2, v3) of
+            (TFunc b f, TArray s2 v2', TReal s3 _) ->
+                if   k
+                then if   b
+                     then let (v4, t4, c4) = traceFoldFull (foldFunction f) (c3 + 1) s v3 v2' 0
+                          in  (v4, (s, TFold t4 s2 s3) : t3, c4)
+                     else let (v4, t4a, sb, t4b, c4) = traceFoldVect (foldFunction f) (c3 + 1) s v3 v2'
+                          in  (v4, (s, TFoldV t4a sb t4b s2 s3) : t3, c4)
+                else traceFoldFull (foldFunction f) (c3 + 1) s v3 v2' 0 <:> t3
+
     trace' n c _ (ERef s1) = (n Map.! s1, [], c)
 
     branchCheck :: TEnvironment -> Bool -> Expression -> Bool
@@ -196,6 +231,11 @@ module Trace (
         case n Map.! s1 of
             (TFunc b _) -> b
             _           -> False
+
+    foldFunction :: (TValue -> Int -> (TValue, Trace, Int)) -> (TValue -> TValue -> Int -> (TValue, Trace, Int))
+    foldFunction f x y c = case f x c of
+        (TFunc _ g, tf, cf) -> g y cf <:> tf
+        _                   -> error "Type mismatch in foldFunction"
 
     traceArrayLift :: String -> Int -> [Float] -> Trace
     traceArrayLift _ _ []     = []                                  -- Empty array = empty trace
@@ -246,6 +286,65 @@ module Trace (
                     ft' = rename s' (sn ++ '!' : show i) ft
                 in  (vn, ft' ++ xst, xsc)
             _                           -> error "Type mismatch in traceArrayMap"
+
+    traceFoldFull :: (TValue -> TValue -> Int -> (TValue, Trace, Int)) -> Int -> String -> TValue -> [Float] -> Int -> (TValue, Trace, Int)
+    traceFoldFull _ c _  z []     _ = (z, [], c)
+    traceFoldFull f c sa z (x:xs) i =
+        let sx           = sa ++ '!' : show i
+            x'           = TReal sx x
+            (vx, tx, cx) = f z x' c
+        in  traceFoldFull f cx sa vx xs (i + 1) <:> tx
+
+    vectorizedFoldThreads :: Int
+    vectorizedFoldThreads = 2
+
+    traceFoldVect :: (TValue -> TValue -> Int -> (TValue, Trace, Int)) -> Int -> String -> TValue -> [Float] -> (TValue, [Trace], String, Trace, Int)
+    traceFoldVect f c sa z xss
+        | len < vectorizedFoldThreads =
+            let (vxs, txs, cxs) = traceFoldFull f c sa z xss 0
+            in  (vxs, [], "", txs, cxs)
+        | len < (vectorizedFoldThreads * 2) = controller (len `div` 2) c [] xss [] []
+        | otherwise                         = controller vectorizedFoldThreads c [] xss [] []
+        where
+            len = length xss + 1
+            controller :: Int -> Int -> [Trace] -> [Float] -> [Float] -> [String] -> (TValue, [Trace], String, Trace, Int)
+            controller 0 c' ts _  rs srs =
+                let s  = 'r' : show c'
+                    z' = TReal (s ++ "!0") (head rs)
+                    (vc, tc, cc) = traceFoldFull f (c' + 1) s z' (tail rs) 1
+                    sj = 'r' : show cc
+                    tc' = (sj, TJoin srs) : tc
+                in  (vc, ts, sj, tc', cc + 1)
+            controller t c' ts xs rs srs
+                | mod (length xs + 1) t == 0 =
+                    if   length xs == length xss
+                    then let size = length xs `div` vectorizedFoldThreads
+                             sarr = take (size - 1) xs
+                             (vf, tf, cf) = traceFoldFull f c' sa z sarr 0
+                         in  case vf of
+                             TReal sr r -> controller (t - 1) cf (tf : ts) (drop (size - 1) xs) (r : rs) (sr : srs)
+                    else let size = length xs `div` vectorizedFoldThreads
+                             sarr = take size xs
+                             l    = length xss - length xs
+                             z'   = TReal (sa ++ '!' : show l) (head sarr)
+                             (vf, tf, cf) = traceFoldFull f c' sa z' (tail sarr) l
+                         in  case vf of
+                             TReal sr r -> controller (t - 1) cf (tf : ts) (drop size xs) (r : rs) (sr : srs)
+                | otherwise                  =
+                    if   length xs == length xss
+                    then let size = length xs `div` vectorizedFoldThreads
+                             sarr = take size xs
+                             (vf, tf, cf) = traceFoldFull f c' sa z sarr 0
+                         in  case vf of
+                             TReal sr r -> controller (t - 1) cf (tf : ts) (drop size xs) (r : rs) (sr : srs)
+                    else let size = length xs `div` vectorizedFoldThreads + 1
+                             sarr = take size xs
+                             l    = length xss - length xs
+                             z'   = TReal (sa ++ '!' : show l) (head sarr)
+                             (vf, tf, cf) = traceFoldFull f c' sa z' (tail sarr) l
+                         in  case vf of
+                             TReal sr r -> controller (t - 1) cf (tf : ts) (drop size xs) (r : rs) (sr : srs)
+
 
     traceMapNaive :: (TValue -> Int -> (TValue, Trace, Int)) -> Int -> String -> String -> [Float] -> Int -> (TValue, [Trace], Int)
     traceMapNaive _ c _  sn []     _ = (TArray sn [], [], c)

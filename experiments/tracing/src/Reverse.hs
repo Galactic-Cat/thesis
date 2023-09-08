@@ -7,6 +7,7 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
     import Data.Map (Map ())
     import qualified Data.Set as Set
     import Data.Set (Set)
+    import Data.Maybe (fromJust)
     import Expression (Op1 (Idx, Sin, Sum), Op2 (Add, Mul, Sub))
     import Forward (Forward, Forwarded (FOp1, FOp2, FMap, FMapV, FFold, FFoldV, FJoin), FValue (FArray, FReal))
 
@@ -90,28 +91,31 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
             toSparse i (AReal a') = ASparse i a'
             toSparse _ _          = error "Type mismatch in assignAdjoints/FMap/toSparse"
 
-    assignAdjoints (FMapV f' s1) s a f r = error "Couldn't figure out implementation for FMapV yet"
+    assignAdjoints (FMapV f' s1) s a f r = error "Not implemented in assignAdjoints/FMapV (see source code for more detail)"
+        -- No time left to implement this but the steps are as follows:
+        -- Using the trace f' and the intermediate value for s1, calculate the intermediate values for all subtraces
+        -- Then using f' and the intermediate values, we can do the reverse-pass, doing each step on all items
+        -- We end up with our adjoint array
 
     assignAdjoints (FFold f s1 s2) s a _ r =
-        let r' = reverse f s a
-            ma = snd $ r' Map.! s1
-        in  case (Map.lookup s2 r', ma) of
-            (Just (_, Just z'), Just a') -> (addAdjoint s1 a' (addAdjoint s2 z' r), [s1, s2])
-            (Nothing,           Just a') -> (addAdjoint s1 a' r, [s1])
+        let rf = reverse f s a
+            ma = snd $ rf Map.! s1
+            r' = Map.unionWith unionReverse r (Map.delete s1 $ Map.delete s2 rf)
+        in  case (Map.lookup s2 rf, ma) of
+            (Just (_, Just z'), Just a') -> (addAdjoint s1 a' (addAdjoint s2 z' r'), [s1, s2])
+            (Nothing,           Just a') -> (addAdjoint s1 a' r', [s1])
             _                            -> error "Type mismatch in assignAdjoints/FFold"
 
     assignAdjoints (FFoldV f1 q f2 s1 s2) s a _ r =
         if   Map.null f2
         then let r' = reverse f1 s a
-                 ma = snd $ r' Map.! s1
-                 mz = snd $ r' Map.! s1
-             in  case (ma, mz) of
-                 (Just a', Just z') -> (addAdjoint s1 a' (addAdjoint s2 z' r), [s1, s2])
-                 _                  -> error "Type mismatch in assignAdjoints/FFoldV (1)"
+                 aa = fromJust $ snd $ r' Map.! s1
+                 az = fromJust $ snd $ r' Map.! s1
+             in  (addAdjoint s1 aa (addAdjoint s2 az r), [s1, s2])
         else let r2 = reverse f2 s a
                  a2 = snd $ r2 Map.! q
                  ss = getJoin
-                 (a1s, z') = getParts ss $ justify a2 "assignAdjoints/FFoldV"
+                 (a1s, z') = getParts ss $ fromJust a2
                  a1 = foldl (<+) (AArray $ replicate (Map.size f1) 0.0) a1s
              in  (addAdjoint s1 a1 (addAdjoint s2 z' r), [s1, s2])
         where
@@ -123,7 +127,7 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
             getParts []      _              = ([], AReal 0.0)
             getParts (s':ss) (AArray (a':as)) =
                 let r'  = reverse f1 s' (AReal a')
-                    a'' = justify (snd $ r' Map.! s') "assignAdjoints/FFoldV/getParts"
+                    a'' = fromJust (snd $ r' Map.! s')
                     (ra, z') = getParts ss (AArray as)
                 in  case Map.lookup s2 r' of
                     Just (_, Just z'') -> (a'' : ra, z' <+ z'')
@@ -163,11 +167,6 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
     -- TODO: Actually implement this in assignAdjoints for FMap, FMapV, FFold, and FFoldV
     unionReverse :: ([Adjoint], Maybe Adjoint) -> ([Adjoint], Maybe Adjoint) -> ([Adjoint], Maybe Adjoint)
     unionReverse (asa, aa) (asb, _) = (asa ++ asb, aa)
-
-    -- Utility function to un-maybe a maybed value or report a helpful error
-    justify :: Maybe a -> String -> a
-    justify (Just a) _ = a
-    justify Nothing  s = error $ "Failed to justify at " ++ s
 
     -- Checks if an adjoint has all its parts ready, and combines them if necessary
     resolve :: String -> Forward -> Reverse -> Reverse
