@@ -64,7 +64,15 @@
     \maketitle
 
     \begin{abstract}
-        Abstract.
+        In this paper we set out to make a simple reverse-mode automatic differentiation (AD) algorithm, that uses tracing for the forward pass, and preserves data parallelism in the reverse pass.
+        To do this, we first try to formalize the notion of tracing somewhat.
+        We find that while some flexibility in the definition of is needed for it to work well, we can also boil it down to picking a subset of data types to keep in the trace.
+        We also define a couple of logical assertions that further help us in showing whether a trace does really contain the information that we need.
+        Having defined tracing, in theory, but also over a Haskell DSL, we continue to automatic differentiation.
+        Here we expand the tracing function into a forward-pass function by adding reference counting and intermediate values.
+        Using this forward-pass trace as a map, we then show how we can do the reverse-pass.
+        We also show that we can keep data-parallelism intact for the map and fold (reduce) operations.
+        Finally, we also highlight how task parallelism can be used in the reverse-pass to possibly unlock even more efficiency.
     \end{abstract}
 
     \input{sections/background}
@@ -73,12 +81,12 @@
 
     \input{sections/reverse}
 
+    \input{sections/conclusion}
+
     \clearpage
     \bibliographystyle{unsrt}
     \bibliography{references}
     \clearpage
     \appendix
     \input{sections/eval}
-    \clearpage
-    \input{sections/utility}
 \end{document}

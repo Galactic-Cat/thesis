@@ -1,0 +1,69 @@
+\section{Conclusion}
+    In this thesis, we set out to find a way to preserve data-parallelism through a reverse-mode automatic differentiation approach using tracing.
+    We did so mainly by defining a domain-specific language (DSL) for Haskell, and implementing tracing and automatic differentiation on that DSL.
+
+    We found our first obstacle in the tracing, despite or maybe even because of its ubiquity, it was hard to find a proper definition that fit our use case.
+    In fact, a formal definition of tracing seemed to be largely absent from literature, excluding some specialized definitions.
+    So we first had to start by defining tracing, at least enough for our use case.
+    We came to two insights here.
+    First, we can decide on what and how to trace a program, by deciding what data types and data structures we wish to keep in the trace, and which we would rather remove or ``trace away''.
+    Second, a uniform way of tracing is unlikely to exist, at least on a higher-level of programming.
+    This would be due to many operations that may require special case implementations, some even dependent on the types we wish to keep in the trace.
+    So while a completely formal universal definition of tracing was off the table, we still managed to create two logic assertions that, although quite broad still, would help us implement tracing on the DSL we wished to explore.
+    
+    With the tracing worked out, we could now continue to the automatic differentiation.
+    Reverse-mode AD exists of two phases, a forward pass and a reverse pass.
+    The forward pass would be largely covered by tracing, however it needed a couple adjustment for it to be useful.
+    First off, the trace was lacking intermediate values of the program, which would be needed for the reverse pass.
+    Recalculating these values during the reverse pass would be very inefficient, so instead we modified the trace to also store intermediate values.
+    The second problem was a little more tricky: while the trace would provide us with all the operations done, including a way to reverse pass through the trace by reference names, it did not provide the full structure of the computational graph.
+    To be more precise: while calculating the adjoint for some node $a$ on the computational graph, we could not be sure whether this was the only edge leading to $a$, or if there were others.
+    This is problematic, because to continue the reverse pass from $a$ to its ancestors, we would need to be sure the adjoint for $a$ was calculated correctly.
+    Of course, this could be easily solved by introducing some sorting algorithm to the trace before the reverse pass, however this would force sequential execution of the reverse pass.
+    We wanted to avoid this as to leave room for task parallelism in the reverse pass: where we could introduce multiple sub-tasks from a node in the computational graph that has multiple ancestors.
+    We managed to solve this problem by drawing inspiration from Kuhn's topological sort algorithm.
+    First, we add reference counters to each node in the computational graph, for which we do the counting during the forward pass.
+    Then on the reverse pass, when we have a calculated adjoint we wish to assign to an ancestor, we just add it to a list of partial adjoints for that ancestor.
+    Now we can check the length of that list of partial adjoints to the reference counter associated with that node, and if they are equal, we would know we had collected all the partial adjoint and could calculate the complete adjoint for that node.
+    Using this method, we can enforce an implied topological sort without enforcing that sort beforehand, which allows us the use of task parallelism.
+    
+    Now using this carefully constructed forward pass, we would be able to do our reverse pass quite easily.
+    However, we still had one problem left to deal with: closures.
+    Since our DSL only allowed for lambda functions as closures, we already made sure to capture any relevant information in the environment on the forward pass.
+    However, this meant that in the reverse pass our lambda functions could call on variables outside the function scope, variables that needed to be updated with relevant adjoints as well.
+    For regularly applied functions this was no problem, after all the operations done by that applications would just appear in the trace, leaving no opaque closures for us to deal with.
+    However, when we introduced arrays to our DSL, and array operations like map, generate, and fold, we ran into the opaqueness of these functions.
+    While the function themselves where traced away into sub-traces for these array operations, these array operations themselves would not clearly display any variables outside the function scope as ancestors.
+    When we would pass over them in the reverse pass, and use an independent reverse pass to calculate through the sub-traces, the adjoint contributions for variables irrelevant to the input array would be lost.
+    Clearly this is unacceptable, because this would mean missing contributions, and incalculable adjoints for these informal ancestors.
+    Luckily the main problem here was identifying it, as it could easily be remedied. 
+    We simply combine these reverse passes over the sub-traces with the main reverse pass, such that all contributions are saved.
+    The main takeaways from the reverse pass implementation were the insight we gained into closure, and the reverse pass over data-parallel array operations.
+    With our forward pass storing the nature of these array operations in sub-traces, we could leverage these sub-traces to do the reverse pass.
+    We found that for the operations included in our DSL, we could leverage data-parallelism on the reverse pass in the same places data-parallelism was used in regular execution.
+    Similarly, for any point in the regular execution where we could implement task parallelism, we could also do so in the reverse pass.
+
+    With all this done, we ended up with a reverse-mode AD algorithm that would work on our entire DSL.
+    While this DSL was not that impressive in scope, it did show us a clear way to use tracing for automatic differentiation.
+    Furthermore, it showed us how we could maintain data parallelism in the reverse pass.
+    We also found that the performance of our implementation left some room for improvement.
+    However, by either letting go of purity for the reverse mapping and using more efficient data structures, we might be able to reach a more desirable time complexity.
+
+    \subsection{Future work}
+        Quite some work still remains.
+        Such as an expansion to our tracing definition.
+        This could either be an exploration into more complex type structures, or formalization of the definition we started.
+        Especially with a formalized definition, one might be able to reach some more interesting correctness proofs than the two assertions we found.
+        However, the question remains whether tracing can be formalized; we noted that we need special handling of a lot of cases, which might not be neatly formalizable.
+
+        Furthermore, we left the actual implementation of our AD algorithm at a high-level DSL, which is quite different from actual implementation on a lower level or GPU programming.
+        While our findings should carry over regardless, it would be most interesting to see what kind of performance improvements can be gained by using data and task parallelism in the reverse pass for AD.
+        Such an implementation should probably also include real parallelism, rather than parallelism hinted to by operations that could be parallelized.
+
+        In a similar vein, we probably would want to expand the operations of our DSL, to create more definitions for tracing and AD on specific operations.
+        Plenty of parallel array operations remain, including scan, scatter, and gather to name just a few.
+        There are also still types structures yet to explore, and types in general that may need to be traced (away).
+
+        Finally, but perhaps most importantly, there is the issue of higher-dimensional arrays.
+        Our implementation in this paper dealt only with 1-dimensional arrays, which allowed us to sidestep complex situations, like multidimensional folds.
+        While we can reasonably assume the theory laid out in this work should hold in higher dimensions as well, as there is nothing particularly special about higher-dimensional array operations, we could also imagine it becoming a difficult task to implement.

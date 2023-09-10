@@ -1,3 +1,17 @@
+\section{Introduction}
+    In Automatic Differentiation (AD) we try to find the derivative of some numeric function, automatically.
+    AD systems are nothing new, however they are still as relevant as ever.
+    Especially with the current AI spring, we find AD playing the important role as the back propagator function in artificial neural networks.
+    
+    And while AD is fairly quick, it also has its inefficiencies.
+    Especially in array languages, we find that modern AD libraries either do not really take advantage of data parallelism, or do so in convoluted ways.
+
+    In this paper, we use the intuitive method of finding the computational graph of a function through tracing.
+    Then we do a reverse-pass over this computational graph to calculate the derivative.
+    By taking parallel array operations into careful consideration, we can even maintain data parallelism by using other data-parallel operations to calculate the partial derivatives.
+
+    We set out to think a little more sceptically about what tracing actually means, and then use our new understanding for finding the derivative using reverse-mode AD.
+
 \section{Background}
     \subsection{Automatic Differentiation} \label{sec:bg_ad}
         Automatic Differentiation (AD), like the name suggests, involves programmatically finding the derivative of some programmed function \cite{margossian2019review}.
@@ -11,14 +25,14 @@
         Say we have some single-variate function $h(x)$, which is the compound function of the functions $f$ and $g$:
         \[h(x)=(f\circ g)(x)\]
         In this case, the chain rule tells us that the derivative of $h(x)$ is given by as $\tfrac{d}{dx}h(x)$:
-        \[\frac{d}{dx}h(x)=\frac{d}{dx}(f\circ g)(x)=\frac{df}{dg}\biggr|_{g(x)}\cdot\frac{dg}{dx}\biggr|_x\]
+        \[\frac{d}{dx}h(x)=\frac{d}{dx}(f\circ g)(x)=\frac{d(f(g(x)))}{dg}\cdot\frac{d(g(x))}{dx}\]
         For clarity, in Lagrange's notation, where $h'(x)$ is the derivative of $h(x)$, this same statement can be expressed as:
         \[h'(x)=(f\circ g)'(x)=f'(g(x))\cdot g'(x)\]
         The chain rule also extends to compositions of more than two functions.
         For example, say we have a function $k(x)$ as below:
         \[k(x)=(f\circ g\circ h)(x)\]
-        We can then find the find the derivative of $k(x)$ using the chain rule as well:
-        \[\frac{d}{dx}k(x)=\frac{d}{dx}(f\circ g\circ h)(x)=\frac{df}{dg}\biggr|_{g(h(x))}\cdot\frac{dg}{dh}\biggr|_{h(x)}\cdot\frac{dh}{dx}\biggr|_x\]
+        We can then find the derivative of $k(x)$ using the chain rule as well:
+        \[\frac{d}{dx}k(x)=\frac{d}{dx}(f\circ g\circ h)(x)=\frac{d(f(g(h(x))))}{dg}\cdot\frac{d(g(h(x)))}{dh}\cdot\frac{d(h(x))}{dx}\]
         Again for clarity, in Lagrange's notation this would be:
         \begin{align*}
             k'(x)=(f\circ g\circ h)'(x)&=f'((g\circ h)(x))\cdot(g\circ h)'(x)\\
@@ -28,14 +42,14 @@
         The chain rule also provides us with a method of deriving multivariate functions.
         For instance, we can imagine a function $f(x,y)$.
         Now, the derivative of $f$ changes depending on which variable we wish to derive with respect to.
-        Furthermore this is not a composition of functions, so the chain rule does not come into play.
+        Furthermore, this is not a composition of functions, so the chain rule does not come into play.
         However, if we image the variables $x$ and $y$ as single-variable functions $x(t)$ and $y(t)$ we can find the derivative of $f$ with respect to $t$ using the chain rule.
         We get:
         \[f(x(t),y(t))\]
         Now to calculate the derivate of $f$ with respect to $t$, we first need to find the derivative of $x$ with respect to $t$ and the derivative of $y$ with respect to $t$.
         The chain rule tells us that the derivative of $f$ here is equal to the partial derivative of $f$ with respect to $x$ summed with the partial derivative of $f$ with respect to $y$.
         We can express this as:
-        \[\frac{d}{dt}f(x(t),y(t))=\frac{\partial f}{\partial x}\biggr|_{x(t)}\cdot\frac{dx}{dt}\biggr|_t+\frac{\partial f}{\partial y}\biggr|_{y(t)}\cdot\frac{dy}{dt}\biggr|_t\]
+        \[\frac{d}{dt}f(x(t),y(t))=\frac{\partial(f(x(t), y(t)))}{\partial x}\cdot\frac{d(x(t))}{dt}+\frac{\partial f(x(t), y(t))}{\partial y}\cdot\frac{d(y(t))}{dt}\]
 
         An important thing to note about the chain rule is that we still need the intermediate primal values in a compound function.
         Review the following compound function:
@@ -66,12 +80,12 @@
         \begin{equation} \label{eq:dualnumbers}
             (a,\dot{a})\cdot(b,\dot{b})=(a\cdot b, \dot{a}\cdot b+\dot{b}\cdot a)
         \end{equation}
-        Now we can find the derivative of some program with regards to the input $x_i$ by setting $\dot{x_i}$ to $1$, setting the tangents of all other inputs to $0$, and just running through the program calculating tangents as we go.
+        Now we can find the derivative of some program with regard to the input $x_i$ by setting $\dot{x_i}$ to $1$, setting the tangents of all other inputs to $0$, and just running through the program calculating tangents as we go.
         The tangent part of the output value(s) is also the calculated derivative of the whole program.
 
         While forward-mode AD is fairly straightforward, it comes with some drawbacks.
         The main one being that for a function $f:\mathbb{R}^n\to\mathbb{R}^m$ with $n$ inputs and $m$ outputs, to get the effect of each input variable on each output variable, we would need to perform $n$ passes over the function, one for each input variable (or we need to track $n$ tangent parts for each step).
-        This is can be cumbersome, especially if $n$ is much larger than $m$.
+        This can be cumbersome, especially if $n$ is much larger than $m$.
         For those cases, we might be better off with reverse accumulation, or reverse-mode.
 
         In reverse-mode, we peg the derivative part of one of our outputs with some seed (often $1$), and set the derivative parts of the other outputs to $0$.
@@ -79,15 +93,15 @@
         When the outputs are set, we can work our way back through the function, calculating the derivative parts from the output to the input.
         Intuitively, this computes the gradient of the output dimension we pegged to $1$, or the direction of the steepest slope.
         Practically, the idea of working back through a program requires some way of knowing where the outputs came from (a sort of dependency structure).
-        This then requires a forward pass, to find this structure, to calculate the intermediate values, and often to setup any dual-numbers or other implementation details.
+        This then requires a forward pass, to find this structure, to calculate the intermediate values, and often to set up any dual-numbers or other implementation details.
         And while reverse-mode is definitely harder to implement, it also provides us with a way to calculate the sensitivity of all inputs to an output, which is much more efficient for functions with many more inputs than outputs (which can be quite common in certain applications like neural networks).
 
-        In mathematical terms, calculating the partial derivative of one output with regards to one input, means calculating one cell in the Jacobian, the matrix of all partial derivatives.
-        For a function $f:\mathbb{R}^n\to\mathbb{R}^m$ with $n$ inputs and $m$ outputs, the Jacobian $J_f$ would be a $n\times m$ matrix.
+        In mathematical terms, calculating the partial derivative of one output with regard to one input, means calculating one cell in the Jacobian, the matrix of all partial derivatives.
+        For a function $f:\mathbb{R}^n\to\mathbb{R}^m$ with $n$ inputs and $m$ outputs, the Jacobian $J_f$ would be an $n\times m$ matrix.
         Here a column $i$ represents the partial derivatives $\tfrac{\partial\vec{f}}{\partial x_i}$, where $\vec{f}$ are all outputs of $f$, and $x_i$ represents a single input.
         A row $j$ then represents the derivatives $\nabla f_j=\tfrac{\partial f_j}{\partial\vec{x}}$, where $\vec{x}$ are all inputs of $f$, and $\nabla f_j$ is also known as the gradient of the single output value $f_j$.
         This is also shown in Equation \ref{eq:jacobian}, showing the Jacobian for some function $f$ with $n$ inputs ($x_1,\dots,x_n$) and $m$ inputs ($f_1,\dots,f_m$).
-        An important take-away here is that forward-mode computes the derivatives of all outputs with regards to a single input, so a column in the Jacobian, and reverse-mode computes the derivatives of all inputs with regards to a single output, so a row in the Jacobian.
+        An important take-away here is that forward-mode computes the derivatives of all outputs with regard to a single input, so a column in the Jacobian, and reverse-mode computes the derivatives of all inputs with regard to a single output, so a row in the Jacobian.
         Again, if we want to calculate the full Jacobian, forward-mode is more efficient when we have more outputs than inputs or when the Jacobian has more columns than rows, and the reverse-mode is more efficient for functions with more inputs than outputs or for Jacobians with more rows than columns.
 
         \begin{equation} \label{eq:jacobian}
@@ -102,17 +116,17 @@
         However, in 1992, Andreas Griewank showed that by using taping and checkpointing we could trace time complexity for space complexity to reduce either to a constant multiple of the log of the execution time \cite{griewank1992achieving}.
         In general the practice of taping refers to a form of tracing on the program we wish to differentiate, where we execute the program as normal and record all the steps and intermediate values in a first-in-last-out data structure referred to as a ``tape'' or Wengert list.
         In a second phase to the reverse-mode algorithm, the tape is then used to calculate the derivatives in question, which due to the first-in-last-out nature of the tape, is in the precise reverse of the execution order of the program.
-        An important advantage of taping is that by giving each variable and intermediate calculation a unique id we can avoid redundant execution, because we can just refer to the intermediate value or tangent/adjoint stored in the tape.
+        An important advantage of taping is that by giving each variable and intermediate calculation a unique ID we can avoid redundant execution, because we can just refer to the intermediate value or tangent/adjoint stored in the tape.
         While taping is efficient time-wise, it clearly adds a memory overhead that can be quite sizable for large programs.
         Checkpointing aims to address this by storing multiple parts of the tape to memory attached to checkpoints in the program's execution.
         The trick here being, that on the reverse-pass only the intermediate values from the most recently encountered checkpoint are loaded from memory, intermediate values that were not stored as part of this checkpoint are recalculated.
-        By strategically placing these checkpoints, and deciding which intermediate values are stored, this can cut the size complexity at a relatively small time complexity increase.
+        By strategically placing these checkpoints, and deciding which intermediate values are stored, this can cut the size complexity at a relatively small-time complexity increase.
         It should be noted that automatic differentiation can also be performed on a program where we do not have any specific inputs.
         We can do this using source transformation \cite{bischof2000computing}.
         In its most basic form source transformation can be implemented as just interlacing the derivative calculations into the regular program.
-        An example of this is provided in Listing \ref{lst:transformation_fw}, where we calculate the derivative of some variable y (as dy) with regards to the variable x1.
+        An example of this is provided in Listing \ref{lst:transformation_fw}, where we calculate the derivative of some variable y (as dy) with regard to the variable x1.
         For reverse-mode AD this kind of interlacing is not possible, as we need to reach the end of the program before we can start the reverse pass, which is exactly why we record our steps on the tape: so we can reverse over the tape and know how to produce our reverse AD program.
-        An example of this is provided in Listing \ref{lst:transformation_rv}, where we again calculate the derivative of y (as dy), with regards to x1 and x2.
+        An example of this is provided in Listing \ref{lst:transformation_rv}, where we again calculate the derivative of y (as dy), with regard to x1 and x2.
         So, to summarize, for a function $f:A\to B$, source transformation finds the derivative function for any input in the domain $A$, whereas dual-numbers (or similar approaches) find the derivative function for a specific input $a\in A$.
         Of course, in complex functions with a lot of control flow, source transformation can become cumbersome as it needs to account for all possible inputs, whereas dual-numbers only needs to account for one.
 
@@ -153,7 +167,7 @@
         This, in theory, allows for differentiating programs of arbitrary size, because the differentiation process is not limited by the size of the working memory \cite{griewank2008evaluating}.
 
         More recently implementations, like Fei Wang et al. 2019 paper, have shown how to simplify reverse automatic differentiation using continuation passing style and delimited continuations \cite{wang2019demystifying}.
-        This method uses dual numbers and cleverly overloads operators so they call the forward pass as a continuation and then perform the backwards pass on the returned value.
+        This method uses dual numbers and cleverly overloads operators, so they call the forward pass as a continuation and then perform the backwards pass on the returned value.
 
         In 2022, Krawiec et al. show how reverse-mode AD can be extended efficiently to higher-order functional programs \cite{krawiec2022provably}.
         While the Wang paper also did this, Krawiec uses the functional nature to provide a correctness proof of the reverse-mode AD, something that had previously only been done on implementations that were either asymptotically inefficient or only worked on first-order languages.
@@ -165,28 +179,28 @@
         But by limiting their AD implementation to second-order functional languages, they can largely avoid this redundancy with efficient program transformations on parallel operators.
 
         Finally, in 2023, Smeding en Vákár bring back explicit dual-numbers to reverse AD \cite{smeding2023efficient}.
-        However, instead of pairing each number with its computed adjoint, they instead pair it with a linear backpropagator function, which they can then later chain to get the full derivative.
+        However, instead of pairing each number with its computed adjoint, they instead pair it with a linear back-propagator function, which they can then later chain to get the full derivative.
         While this initially seems to eliminate the need for taping, they find that through optimizations they return to a concept that is very close to taping and show that it is in fact equivalent.
 
     \subsection{Tracing}
         Tracing is a concept in computer science that is often left without proper definition.
-        While the main ideas behind tracing are well known, they are generally assumed known by the reader and therefor left without explanation.
+        While the main ideas behind tracing are well known, they are generally assumed known by the reader and therefore left without explanation.
         This is also in part because, in software engineering, the term tracing also refers to finding the origin of some call (``tracing'' the call stack), which is only tangentially related to the tracing we are interested in, but can leave definitions of tracing a bit muddled.
         This is why, in Section \ref{sec:tracing}, we will discuss more about that proper definition.
         For now, it is important to know that, when we refer to tracing in this paper, we speak about tracing the path of computation through a program, given some (valid) input to said program.
         In other terms, given a program and an input, we walk through the program and record each computational step for some later purpose, like automatic differentiation.
-        This recording can happen with some domain-specific pseudo-language, or in full fledged code if we wish to revaluate the trace later (or a combination of the two).
+        This recording can happen with some domain-specific pseudo-language, or in full-fledged code if we wish to reevaluate the trace later (or a combination of the two).
 
         Doing tracing gives us some interesting insights into a program we trace.
         First, it effectively ignores control flow.
         This is fairly intuitive, when given a set of inputs to a program, the control flow will control what path the program uses, and since we only record computations we find what is often dubbed a ``straight-line program'' for some inputs.
         This can be useful for instance in automatic differentiation, where we often only want to differentiate a computation, not the entire program including unused branches.
-        This will also be the use of tracing in this paper, as laid out in Section \ref{sec:ad}.
+        In this paper, we will also be using tracing for this purpose, as laid out in Section \ref{sec:ad}.
 
         As mentioned, in literature we see this type of tracing used for automatic differentiation.
         One of these uses was by Bischof in 1991 \cite{bischof1991issues}.
         In his paper, Bischof discusses the use of the computational graph of a program in automatic differentiation (using ADOL-C \cite{griewank1996algorithm}).
-        The computational graph of a program is an directed acyclic graph, where each node contains a computational step in the program, and edges connect these steps in the execution order of the program.
+        The computational graph of a program is a directed acyclic graph, where each node contains a computational step in the program, and edges connect these steps in the execution order of the program.
         Bischof creates this graph from the tape produced by ADOL-C, which makes sense: for automatic differentiation as discussed, the tape acts as a sort of trace, recording the steps that are important in the automatic differentiation.
         Bischof then uses a graph colouring algorithm on the computational graph to highlight ``component functions'' that may be differentiated concurrently, as to improve the running time of the algorithm.
         In 2008, Bischof et al. expand on this by extending the tracing automatic differentiation to loops \cite{bischof2008parallel}.
@@ -202,7 +216,7 @@
 
         TensorFlow, a machine learning library, also uses tracing to create computational graphs \cite{abadi2016tensorflow}.
         This kind of tracing is not as low to the ground as actually following individual computations.
-        Since TensorFlow mainly focusses on building artificial neural networks, the computational graph is made explicit by the programmer.
+        Since TensorFlow mainly focuses on building artificial neural networks, the computational graph is made explicit by the programmer.
         While there are some nuance differences between a computational graph of a neural network and the neural network itself, these differences are somewhat unimportant.
         More interestingly, TensorFlow allows for the partial execution of the computational graph.
         While Bischof's use of a graph colouring algorithm already suggested this, TensorFlow actively uses this technique to re-run partial computational graphs, which works well for the explicit nature of neural networks, as the computational graph stays unchanged even if the inputs change (as neural networks do not have internal control flow).
@@ -212,7 +226,7 @@
         Rather than finding the computational graph (or predefining it), JAX waits for Python to execute the function and actually traces it.
         Then, JAX optimizes it, mainly through a process called fusion, which is discussed in Section \ref{sec:bg_array}.
         This is also where JAX gets its name: Just After eXecution, as it waits for Python to execute the function first.
-        It should be noted that JAX can only do this for functions which are pure-and-statically-composed (PSC), meaning functions that have no side-effects and that do not change with different inputs.
+        It should be noted that JAX can only do this for functions which are pure-and-statically-composed (PSC), meaning functions that have no side effects and that do not change with different inputs.
         Again, machine learning code is especially suited for this, as it often already satisfies this PSC assumption.
         
     \subsection{Functional Parallel Array Programming} \label{sec:bg_array}
@@ -225,9 +239,9 @@
             \vec{a}+\vec{b}=[a_1+b_1,\dots,a_n+b_n]\text{ iff }|\vec{a}|=|\vec{b}|
         \end{equation}
         In general vectorization would only work for arrays of the same size were it not for another central concept: broadcasting.
-        Broadcasting involves the resizing of arguments to functions so they can be used.
+        Broadcasting involves the resizing of arguments to functions, so they can be used.
         A very clear example would be if we wished to add a scalar value to each element in an array of scalars.
-        To do this with vectorization alone would mean we'd need another array which replicates the scalar we wish to add for each element in the array we wish to add it to.
+        To do this with vectorization alone would mean we would need another array which replicates the scalar we wish to add for each element in the array we wish to add it to.
         Broadcasting basically does this for us, as exemplified in Equation \ref{eq:broadcasting}.
         \begin{equation} \label{eq:broadcasting}
             \vec{a}+2=[a_1+2,\dots,a_n+2]
@@ -253,7 +267,7 @@
         
         These two camps play an important role in a concept of fusion.
         When we have multiple back-to-back parallel array operations, executing them naively introduces a lot of overhead for reading and writing intermediate values to memory.
-        Instead fusion allows us to combine these operations together, so we can compute them in one go without the overhead of storing intermediates.
+        Instead, fusion allows us to combine these operations together, so we can compute them in one go without the overhead of storing intermediates.
         However, we cannot just go chaining parallel operations, not all parallel operations fuse together nicely.
         In fact, pull-array operations only fuse with other pull-array operations, and the same goes for push-array operations.
         This means for instance that we can fuse multiple scatter operations, but not a scatter and gather operation.
@@ -268,7 +282,7 @@
         Furthermore, modern GPU architectures are especially well-suited for this type of synchronous parallelism, as graphics processing overlaps in large part with parallel array processing.
 
         A good starting point for the history of functional parallel array programming was in 1992, with G. Belloch's paper on the parallel array programming language NESL \cite{blelloch1992nesl}.
-        The language was strongly-typed and had no support for side-effects, making it a functional language.
+        The language was strongly-typed and had no support for side effects, making it a functional language.
         The main way to add parallelism was through the inherently data-parallel ``vectors'' the language introduces in lieu of lists.
         These vectors could also be nested, and functions could run in nested parallel on these vectors.
         Another major inclusion was to allow user-defined functions to be run (in parallel) on these vectors, making it possible to write more complex nested data-parallel algorithms than before.
@@ -277,7 +291,7 @@
         Some data-parallelism followed \cite{hill1995data, herrmann1999parallelization, ellmenreich2000application}, but this was limited to applying a function over a flat array.
         However, in 2001 nested data-parallelism was introduced to Haskell by the NEPAL project by Chakravarty et al. \cite{chakravarty2001nepal}.
         The paper largely focusses on reimplementing NESL as a Haskell library, but creates a much more expressive data-parallel language doing so.
-        This is because NESL was rather limited in scope, whereas Haskell was already a fully-fledged functional programming language.
+        This is because NESL was rather limited in scope, whereas Haskell was already a full-fledged functional programming language.
         Two important concepts come to the forefront in the NEPAL paper, namely flattening and fusion.
         Both in NESL and in NEPAL, higher-dimensional nested parallelism is ``flattened'' to a single distributed parallel operation.
         In NESL, this meant that data-types had to be limited to tuples and the vectors it introduced, to make sure this flattening operation worked correctly.
@@ -306,8 +320,8 @@
         Previous approaches had focussed on irregular arrays, where on array could contain arrays of different lengths.
         The library Repa, introduced in this paper, was made for regular arrays where arrays of each nested rank are the same size.
         However, this allows the library to be purely functional and support shape polymorphism.
-        While DPH was purely functional as well, it wasn't especially performant on regular arrays and it also did not support shape polymorphism.
-        In shape polymorphism, the type of a collection is fixed (unlike in type polymorphism), but the shape of the collection is not \cite{jay1994shapely}.
+        While DPH was purely functional as well, it was not especially performant on regular arrays and it also did not support shape polymorphism.
+        In shape polymorphism, the type of collection is fixed (unlike in type polymorphism), but the shape of the collection is not \cite{jay1994shapely}.
         For instance, under shape polymorphism a function may be applied to either a flat array, or a 10-dimensional one.
         While shape polymorphism for functional arrays had been implemented before in SAC, Repa implemented it by embedding it into Haskell's type system, whereas the SAC implementation had required a purpose-built compiler.
         This also allowed programmers to more easily see and control the shapes of their multidimensional parallel arrays, and build their own shape polymorphic parallel functions.
@@ -328,12 +342,12 @@
         Specifically, an operator defined for a certain rank, is automatically defined for any higher rank, because it can be mapped over these higher dimensions.
         This is subtly different from the more general shape-polymorphism, as rank only refers to the number of dimensions, while shape also contains information on the size of these dimensions.
         With Remora, Slepak et al. tried to shed some light on the more ``murkier corners'' of the array-computational model.
-        They do this by generalizing the array-computational model, which then allows them to both address some of the shortcomings of APL, but also allows them to extend the model to allow arrays of functions and arrays of arguments, which in turn allows for the parallel MIMD (multiple instruction, multiple data) architecture, rather than only SIMD (single instruction, multiple data) parallelism.
+        They do this by generalizing the array-computational model, which then allows them to both address some shortcomings of APL, but also allows them to extend the model to allow arrays of functions and arrays of arguments, which in turn allows for the parallel MIMD (multiple instruction, multiple data) architecture, rather than only SIMD (single instruction, multiple data) parallelism.
 
         In 2017, we got one of the major current functional data-parallel array languages in Futhark \cite{henriksen2017futhark}.
         Futhark's design focusses on efficient nested data-parallelism.
         They do this by using both ``aggressive'' fusion (fusing as much as possible), followed by flattening (like we saw in NESL).
-        Finally through some more optimizations, Futhark produces very performant programs.
+        Finally, through some more optimizations, Futhark produces very performant programs.
         To facilitate this performance however, they do not support higher-order programming, as Futhark only supports up to second-order.
 
         Finally, a more recent parallel array programming language is Dex \cite{maclaurin2019dex,paszke2021getting}.
@@ -342,5 +356,5 @@
         In reality this ``index comprehension'' can also be seen as functions that return arrays, and allow declaring iteration over multiple dimensions in a single line.
         Of course, this is the same idea as pull-arrays, a representation also used by Accelerate under the hood.
         However, the main novelty of Dex is that they use this to make explicit loops, which in turn makes some parallelism opportunities also explicit.
-        Also when these index comprehensions are presented back-to-back, opportunities for fusion become fairly clear as well.
+        Also, when these index comprehensions are presented back-to-back, opportunities for fusion become fairly clear as well.
         In their paper, they also show that on some benchmark problems, Dex performs similarly to Futhark, as a functional array programming language that was specifically designed to write performant parallel GPU code.

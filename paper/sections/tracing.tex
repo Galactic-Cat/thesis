@@ -7,13 +7,13 @@
     However, despite its ambivalence, tracing is rarely properly defined, or defined only for a specific use case.
     So, in this section we set out to create a more general definition of tracing.
     
-    To start, it will help us along to set clear expectations for what we expect a tracing function to do.
+    To start, it will help us along to set clear expectations for what we want a tracing function to do.
     In the simplest terms, we expect a tracing program to take an input program with a set of inputs, and output a ``trace''.
     This output trace is defined as a sequence of operations the input program performed on the inputs to get the expected output.
     A term often used for a trace is a ``single-line program'': a program without control flow.
     Clearing control flow like if-then-else statements is only natural: after all, provided some input the program will only walk down one variation of this branching path.
 
-    Furthermore, it is also generally accepted that the trace consists of a subset of the types of the input program.
+    Furthermore, it is also generally accepted that the trace consists of a subset of the types in the input program.
     Because we are generally more interested in what happens to the data in our program, we can ``trace away'' functions and data structures.
     More precisely, say our input program has the types as defined in Equation \ref{eq:typebase}, where we have sum-types as $\tau+\sigma$, product types as $\tau\times\sigma$, functions as $\tau\to\sigma$, literal real numbers, and literal Booleans.
 
@@ -40,8 +40,8 @@
     This is because tracing something away basically means either deconstructing or ignoring it in the trace.
     For instance, tracing away a tuple, would mean tracing the individual components of that tuple to trace it away.
     Whereas keeping things in the trace means just keeping them untouched.
-    Therefor, we cannot keep a type like a function $\tau\to(\sigma_1+\sigma_2)$ in our trace, because we cannot access the sum type without tracing away the function.
-    Of course we could define a subset $\tau',\sigma'\coloneqq\mathbb{R}$ and then redefine (or add a definition for) our function so that it becomes $\tau'\to\sigma'$ making it safe to trace.
+    Therefore, we cannot keep a type like a function $\tau\to(\sigma_1+\sigma_2)$ in our trace, because we cannot access the sum type without tracing away the function.
+    Of course, we could define a subset $\tau',\sigma'\coloneqq\mathbb{R}$ and then redefine (or add a definition for) our function so that it becomes $\tau'\to\sigma'$ making it safe to trace.
     This then underlines the rule at work here: we can only keep types that do cannot be constructed of types that are traced away.
     This is why the ground types are a natural set of types to keep, as they are never constructed from other types.
     
@@ -64,24 +64,24 @@
     However, it is not always that easy: as we introduce arrays and array operations in Section \ref{sec:arrays}, we will see how operations like mapping on an array need a special solution.
     
     This all is to say that the while we can either ignore or homomorphically copy basic operations for our trace, sometimes we need a special solution.
-    This is mainly because we do not want to lose the information that is needed to execute the trace as a single-line program, even if that means fudging our operations a little.
+    Mainly because we do not want to lose the information that is needed to execute the trace as a single-line program, even if that means fudging our operations a little.
     This also means that, while the operations in our trace language might be a subset of the operations in the original expression language, they might contain modified operations
 
     It seems that our tracing definition comes down to a function that takes in a program and an input to that program, and outputs the steps taken by the program run on the input.
-    Where the input program uses some set of types, of which only a subset is kept in the trace, where the types in this subset may not be constructed using types from outside of the subset.
+    Where the input program uses some set of types, of which only a subset is kept in the trace, where the types in this subset may not be constructed using types from outside the subset.
     What now remains is a concrete definition of the output of the tracing program.
     We have already stated that it should somehow contain the steps done by the input program.
     The steps we wish to record are generally basic operations like arithmetic operations.
     But other operations, such as operations on arrays, can also be added depending on the ultimate goal of the tracing.
     More importantly, as we expect our trace to be akin to a single-line program, we may consider our trace as a series of let-bindings, akin to A-normal form.
-    This means storing each operation as a pair of a unique name or id and the operation performed (like the name and value of the declarations in a let-binding).
+    This means storing each operation as a pair of a unique name or ID and the operation performed (like the name and value of the declarations in a let-binding).
     
     \subsection{Tracing Correctness} \label{sec:correctness}
         Before going into specifics on how to implement tracing, it would also be a good idea to formalize when a trace is actually correct.
         Like we posed before, we start with some program formed from some expression language $S$, and some input $I$ that is valid for that program.
-        If we would wish to resolve a program $S$ on input $I$, then we would need some evaluation function that produces the expected output $O$.
+        If we wish to resolve a program $S$ on input $I$, then we would need some evaluation function that produces the expected output $O$.
         Now, given some trace language $T$ we can write a tracing function that gives us the trace and output of a specific program and input combination.
-        We can write this out as the two functions eval and trace in Equation \ref{eq:evalntrace}.
+        We can write this out as the two functions \texttt{eval} and \texttt{trace} in Equation \ref{eq:evalntrace}.
         \begin{equation}
             \begin{aligned}
                 \text{eval}&:S\times I\to O\\
@@ -93,8 +93,8 @@
         With this we can formalize two criteria for our trace.
         First, the trace, as a single line program $t\in T$ produced by the trace function needs to produce the correct output.
         Now, as mentioned before, $t$ might contain transformed operations, that are not present in $S$.
-        Therefor we either need to look at traces $t\in S\cap T$, or use a different evaluation function.
-        For now we will use the former, to assert the output criterium in Equation \ref{eq:output}.
+        Therefore, we either need to look at traces $t\in S\cap T$, or use a different evaluation function.
+        For now, we will use the former to assert the output criterium in Equation \ref{eq:output}.
         Here we state that for any program $s$ with any input $i$: if the trace $t$ is also a valid program in $S$, that the evaluation of $t$ on $i$ should be the same as the evaluation of $s$ on $i$ or the output $o$ we got out of the tracing function.
         \begin{equation}
             \begin{aligned}
@@ -131,7 +131,7 @@
         If we want our trace to output the same value as the original program, we cannot trace away the type of the original programs output.
         Say we trace away Boolean values when we are tracing a program that returns a Boolean value, then we find ourselves stuck, because we trace away all operations that produce Boolean values.
         And of course, if our trace is not allowed to produce any Boolean values, we cannot produce the required output either.
-        Therefor we must assure that the type of the output is valid in our trace as well.
+        Therefore, we must assure that the type of the output is valid in our trace as well.
 
     \subsection{Basic Tracing} \label{sec:steps}
         We now define some basic tracing steps for some arbitrary language.
@@ -212,7 +212,7 @@
                     -- We trace only the relevant branch
                     (VBool True)  -> trace n e2
                     (VBool False) -> trace n e3
-                    _             -> error "Type mismatch in trace/EIf"
+                    _             -> error ``Type mismatch in trace/EIf''
             
             trace n (ELift v) =
                 -- Check if v is a value we would like to trace
@@ -229,7 +229,7 @@
                     (VBool v) -> (TBool v, [])
                     -- Instantiation is not allowed for functions, they need to be 
                     -- abstracted using ELambda
-                    _         -> error "Type mismatch in trace/ELift"
+                    _         -> error ``Type mismatch in trace/ELift''
 
             trace n (EOp2 op e1 e2) =
                 -- We again first trace e1 and e2
@@ -252,7 +252,7 @@
                     (Equ, TReal _  a, TReal _  b) -> (TBool (a == b), [])
                     (Neq, TBool _  a, TBool _  b) -> (TBool (a /= b), [])
                     (Neq, TReal _  a, TReal _  b) -> (TBool (a /= b), [])
-                    _                             -> error "Type mismatch in trace/EOp2"
+                    _                             -> error ``Type mismatch in trace/EOp2''
 
             -- There is nothing to trace when fetching a variable, but we still need to
             -- actually get the value
@@ -284,7 +284,7 @@
         Since the input is provided, we can resolve the conditional immediately, and then just trace the appropriate branch.
 
         Finally, tracing variable references are simple as well.
-        Currently the only named variables that occur are those created in lambda abstractions or those that are provided as inputs.
+        Currently, the only named variables that occur are those created in lambda abstractions or those that are provided as inputs.
         But no matter how they are created, variable reference does not require tracing.
         This is because the trace will reference the values regardless of whether they are instantiated on the spot or somewhere previously.
         And if they were defined previously, that definition is already in the trace somewhere.
@@ -301,8 +301,8 @@
         We wish that functions while tracing perform tracing themselves, thus return a \texttt{Trace} together with the return value.
         This is then what we do in the abstraction step: we set the trace on the body of the function as the body of the function we return.
         Similarly, we also give this tracing function call the environment at the time of abstraction, allowing the function body to access any free variables that were defined at that time.
-        This makes application also very simple: we apply the function, and then just combine the trace of the functions instantiation, with that of the argument, and that of the functions execution.
-        We also trace the functions instantiation, since at the time of application we do not now if the expression that leads to the function does anything else that we might need to trace as well.
+        This makes application also very simple: we apply the function, and then just combine the trace of the function's instantiation, with that of the argument, and that of the function's execution.
+        We also trace the function's instantiation, since at the time of application we do not know if the expression that leads to the function does anything else that we might need to trace as well.
         Finally, this is results in what we see in Listing \ref{lst:trace_func}, where we left out any patterns of trace that were already present in Listing \ref{lst:trace_bool}.
 
         \begin{haskell}[caption=Tracing away functions, label=lst:trace_func, gobble=12]
@@ -316,7 +316,7 @@
                     -- Do the application, return the result and the combined trace
                     TFunc f -> let (vf, tf) = f v2
                                in  (vf, tf ++ t2 ++ t1)
-                    _       -> error "Type mismatch in trace/EApply"
+                    _       -> error ``Type mismatch in trace/EApply''
             
             trace n (ELambda s e1) =
                 -- Define the function, insert value x as variable s into the environment that is currently 
@@ -326,29 +326,30 @@
                 in  (f, [])
         \end{haskell}
 
+        \clearpage
+        \begin{haskell}[caption=Tracing let bindings, label=lst:trace_let, gobble=12]
+            data Expression
+                = $\ldots$
+                -- The string here is the name of the bound variable
+                | ELet String Expression Expression
+
+            trace :: Environment -> Expression -> (TValue, Trace)
+            trace n (ELet s1 e1 e2) =
+                -- Evaluate e1 first, then e2 with e1 in its environment
+                let (v1, t1) = trace n e1
+                    (v2, t2) = trace (insert s1 v1 n) e2
+                -- Return the value of e2 and the combined trace
+                in  (v2, t1 ++ t2)
+        \end{haskell}
+
         \subsubsection{Tracing let bindings} \label{sec:structures}
             As an additional structure present in functional languages that we might wish to trace, there are let-bindings.
             Recall that let-bindings are effectively the same a lambda abstractions that are resolved immediately.
-            This makes it extremely easy to resolve them, because we can just trace the let-side of the binding and add it to the environment for the tracing of the righthand-side.\\
-            Adding let-bindings and tracing them is done in Listing \ref{lst:trace_let}.
-
-            \begin{haskell}[caption=Tracing let bindings, label=lst:trace_let, gobble=16]
-                data Expression
-                    = $\ldots$
-                    -- The string here is the name of the bound variable
-                    | ELet String Expression Expression
-
-                trace :: Environment -> Expression -> (TValue, Trace)
-                trace n (ELet s1 e1 e2) =
-                    -- Evaluate e1 first, then e2 with e1 in its environment
-                    let (v1, t1) = trace n e1
-                        (v2, t2) = trace (insert s1 v1 n) e2
-                    -- Return the value of e2 and the combined trace
-                    in  (v2, t1 ++ t2)
-            \end{haskell}
+            This makes it extremely easy to resolve them, because we can just trace the let-side of the binding and add it to the environment for the tracing of the right-hand-side.\\
+            Adding let-bindings and tracing them is done in Listing \ref{lst:trace_let}.  
 
     \subsection{Array Tracing} \label{sec:arrays}
-        Tracing on data structures like arrays provides us with a new problem that revolves around whether or not we wish to trace arrays away or not.
+        Tracing on data structures like arrays provides us with a new problem that revolves around whether we wish to trace arrays away or not.
         We can see arrays as either structures that contain the data we are really after, which would require us to trace them away, or as data in their own right which we wish to keep in the trace.
         Both scenarios provide us with interesting challenges.
         
@@ -363,11 +364,11 @@
         This is because when working with arrays our expression will never refer to individual values in arrays, only to the array itself (and using its individual values from there).
         This means that to consistently refer to values that were in arrays in the original expression, we need to give a little more structure to the naming scheme.
         We do this by taking the name of the array, and adding the index of the item to create a name that is unique yet identifiable. 
-        Furthermore, we add in array operations: iota (or range) (\texttt{Iota}), generate (\texttt{Gen}), indexing (\texttt{Idx}), sum (\texttt{Sum}), and map (\texttt{Map}).
+        Furthermore, we add in array operations: iota (or range) (\texttt{Iota}), generate (\texttt{Gen}), indexing (\texttt{Idx}), sum (\texttt{Sum}), map (\texttt{Map}), and folding (reduction) (\texttt{Fold}).
         It should be noted that iota, generate, and indexing take an integer argument as part of their operator.
         For iota and generate this is the size of the array to create, and for indexing this is the index to get the value from.
         While we could allow our language with integers (or by casting floats) to allow using in-language numbers, this really is not all that interesting.
-        If those arguments were part of our trace, it would just mean tracing them like any other number.
+        If those arguments were part of our trace, it would just mean tracing them like any other item by just ignoring them.
 
         \begin{haskell}[caption=Adding arrays, label=lst:language_array, gobble=12]
             data Value = $\ldots$ | VArray [Float]
@@ -378,16 +379,20 @@
                 = $\ldots$
                 | EOp0 Op0
                 | EOp1 Op1 Expression
+                | EOp2 Op2 Expression Expression
+                | EOp3 Op3 Expression Expression Expression
 
             data Op0 = Iota Int
             
             data Op1 = Gen Int | Idx Int | Sum
 
             data Op2 = $\ldots$ | Map
+
+            data Op3 = Fold
         \end{haskell}
 
         Now with arrays added to our language, we can actually trace them.
-        This is done in Listing \ref{lst:trace_array}, where we again extend the trace function, leaving out any patterns that remain unchanged.
+        This is done in Listings \ref{lst:trace_array} and \ref{lst:trace_array2}, where we again extend the trace function, leaving out any patterns that remain unchanged.
         
         First off, when encountering a literal array, or creating one with the iota operator, we need to initialize every individual value.
         This is fairly simple, it just requires us to walk through the array and initialize every value like when we were initializing literal real values.
@@ -439,11 +444,15 @@
                         -- We must not forget to add the trace of e1 to our trace here
                         in  (vs, ts ++ t1)
 
+            -- See Listing !*\ref{lst:trace_array2}*! for trace on EOp2 and EOp3.
+        \end{haskell}
+
+        \begin{haskell}[caption=Tracing away arrays in maps and folds, label=lst:trace_array2, gobble=12]
             trace n (EOp2 op e1 e2) =
                 -- Again we first trace e1 and e2, and we get a name ready as well
                 let (v1, t1) = trace n e1
                     (v2, t2) = trace n e2
-                    s = getName
+                    s        = getName
                 in  case (op, v1, v2) of
                     $\ldots$
                     (Map, TFunc f, TArray sa va) ->
@@ -451,47 +460,19 @@
                         let (vm, tm) = traceArrayMap f sa va 0
                         -- Combine the traces
                         in  (vm, tm ++ t1 ++ t2)
-        \end{haskell}
 
-        \begin{haskell}[caption=Tracing array instantiation and array mapping, label=lst:trace_map, gobble=12]
-            -- traceArrayLift takes the name of the array, the contents, and the current index
-            traceArrayLift :: String -> [Float] -> Int -> Trace
-            -- Empty lists get no trace
-            traceArrayLift _ []     _ = []
-            traceArrayLift s (x:xs) i = 
-                -- Create the name for this item from the array's name and the current index
-                let s' = s ++ `!' : show i
-                -- Trace x as a single real number
-                    tx = TLift (TReal s' x)
-                -- Trace the rest of the array
-                    txs = traceArrayLift s xs (i + 1)
-                -- Return the combined trace
-                in  tx : txs
-
-            -- traceArrayMap takes the function to map, the name of the old array, the name of the new array, 
-            -- the contents of the old array, and the current index
-            traceArrayMap :: (TValue -> (TValue, Trace)) -> String -> String -> [Float]
-                -> Int -> (TValue, Trace)
-            traceArrayMap _ _  sn []     _ = (TArray sn [], [])
-            
-            traceArrayMap f so sn (x:xs) i =
-                -- Get the current value from the array with the right name
-                let current  = TReal (so ++ `!' : show i) x
-                -- Get the result from the function application
-                    (fv, ft) = f current
-                -- Get the results from the rest of the array
-                    (xsv, xst) = traceArraymap f so sn xs (i + 1)
-                -- To add to the TArray and to rename fv we use this case-of statement
-                in  case (fv, xsv) of
-                    (TReal s' v, TArray _ xsv') ->
-                        -- Add this item to the new array
-                        let vn = TArray sn (v : xsv')
-                        -- Rename fv in the function trace to the correct name
-                            ft' = rename s' (sn ++ `!' : show i) ft
-                        -- Finally return the new array and the combined trace
-                        in  (vn, ft' ++ xst)
-
-            rename :: String -> String -> Trace -> Trace
+            trace n (EOp3 op e1 e2 e3) =
+                -- Again we first trace e1, e2, and e3, and we get a new name ready
+                let (v1, t1) = trace n e1
+                    (v2, t2) = trace n e2
+                    (v3, t3) = trace n e3
+                    s        = getName
+                in  case (op, v1, v2, v3) of
+                    (Fold, TFunc f, TReal {}, TArray {}) ->
+                        -- For foldFunction and traceArrayFold see Listing !*\ref{lst:trace_fold}*!
+                        let (vf, tf) = traceArrayFold (foldFunction f) v2 v3 0
+                        -- Combine the traces
+                        in  (vf, tf ++ t1 ++ t2 ++ t3)
         \end{haskell}
 
         The sum operator is a little more in-depth, as shown in Listing \ref{lst:trace_sum}.
@@ -557,6 +538,72 @@
                 in  (v, (s, TOp2 Add sx sr) : t)
         \end{haskell}
 
+        \begin{haskell}[caption=Tracing array instantiation and array mapping, label=lst:trace_map, gobble=12]
+            -- traceArrayLift takes the name of the array, the contents, and the current index
+            traceArrayLift :: String -> [Float] -> Int -> Trace
+            -- Empty lists get no trace
+            traceArrayLift _ []     _ = []
+            traceArrayLift s (x:xs) i = 
+                -- Create the name for this item from the array's name and the current index
+                let s' = s ++ `!' : show i
+                -- Trace x as a single real number
+                    tx = TLift (TReal s' x)
+                -- Trace the rest of the array
+                    txs = traceArrayLift s xs (i + 1)
+                -- Return the combined trace
+                in  tx : txs
+
+            -- traceArrayMap takes the function to map, the name of the old array, the name of the new array, 
+            -- the contents of the old array, and the current index
+            traceArrayMap :: (TValue -> (TValue, Trace)) -> String -> String -> [Float]
+                -> Int -> (TValue, Trace)
+            traceArrayMap _ _  sn []     _ = (TArray sn [], [])
+            
+            traceArrayMap f so sn (x:xs) i =
+                -- Get the current value from the array with the right name
+                let current  = TReal (so ++ `!' : show i) x
+                -- Get the result from the function application
+                    (fv, ft) = f current
+                -- Get the results from the rest of the array
+                    (xsv, xst) = traceArrayMap f so sn xs (i + 1)
+                -- To add to the TArray and to rename fv we use this case-of statement
+                in  case (fv, xsv) of
+                    (TReal s' v, TArray _ xsv') ->
+                        -- Add this item to the new array
+                        let vn = TArray sn (v : xsv')
+                        -- Rename fv in the function trace to the correct name
+                            ft' = rename s' (sn ++ `!' : show i) ft
+                        -- Finally return the new array and the combined trace
+                        in  (vn, ft' ++ xst)
+
+            rename :: String -> String -> Trace -> Trace
+        \end{haskell}
+
+        \begin{haskell}[caption=Tracing array folding, label=lst:trace_fold, gobble=12]
+            -- foldFunction makes a binary function out of two nested lambda functions
+            foldFunction :: (TValue -> (TValue, Trace))
+                -> (TValue -> TValue -> (TValue, Trace))
+            foldFunction f x y = case f x of
+                (TFunc g, tf) -> let (vg, tg) = g y in (vg, tf ++ tg)
+                _             -> error ``Type mismatch in foldFunction''
+
+            -- Traces all steps in a simple left-to-right fold
+            traceArrayFold :: (TValue -> TValue -> (TValue, Trace)) -> TValue
+                -> TValue -> Int -> (TValue, Trace)
+            -- When the array is empty, return just the identity value and an empty trace
+            traceArrayFold f z (TArray _  [])       _ = (z, [])
+
+            traceArrayFold f z (TArray sa (vx:vxs)) i =
+                    -- Create a current value
+                let x          = TReal (sa ++ `!' : show i) vx
+                    -- Do the folding step
+                    (vf,  tf)  = f z x
+                    -- Continue for the rest of the array
+                    (vxs, txs) = traceArrayFold f vf (TArray sa vxs) (i + 1)
+                    -- Combine the trace for the rest of the array with this step's trace
+                in  (vxs, tf ++ txs)
+        \end{haskell}
+
         While the concepts behind tracing away arrays are hopefully not too difficult to understand, it should be obvious from Listings \ref{lst:trace_map} and \ref{lst:trace_sum} that the implementation becomes more complex.
         Now while that is not really a problem, we should really note that the trace becomes messier as well.
         This is especially problematic if we actually want to read the trace to see what is going on: not impossible, but also not pleasant, especially with large arrays.
@@ -564,7 +611,7 @@
 
         Luckily for us, in large parts tracing while keeping arrays is fairly easy.
         This is because we can treat most operations like how we treated operations for real numbers.
-        This has been done in Listing \ref{lst:trace_array2}, except for generate and map, where we replace the tracing patterns from Listing \ref{lst:trace_array}.
+        This has been done in Listing \ref{lst:trace_array2}, except for generate, map, and fold, where we replace the tracing patterns from Listing \ref{lst:trace_array}.
 
         \begin{haskell}[caption=Tracing whilst keeping arrays, label=lst:trace_array2, gobble=12]
             trace :: TEnvironment -> Expression -> (TValue, Trace)
@@ -592,7 +639,7 @@
                 in  case (op, v1) of
                     (Idx i, TArray s1 v) =
                         let x  = v !! i
-                            s' = s1 ++ '!' : show i
+                            s' = s1 ++ `!' : show i
                         -- Now we trace arrays, indexing becomes more relevant to add to our trace,
                         -- as the individual item has not been defined before
                         in  (TReal s' x, (s', TOp1 op s1) : t1)
@@ -600,22 +647,25 @@
                     (Sum, TArray s1 v) = (TReal s (sum v), (s, TOp1 Sum s1) : t1)
         \end{haskell}
 
-        In our current language, the main point of difficulty and interest is the generate and map operations.
-        Both take in a function, which is not a type we wish to keep in our trace, however it produces an array which we wish to keep in our trace.
+        In our current language, the main point of difficulty and interest is the generate, map, and fold operations.
+        They take in a function, which is not a type we wish to keep in our trace, however they produce an array which we wish to keep in our trace.
         While we might be tempted to just discard the function component, we cannot do that because it provides the trace from the original array to the new array.
         Without that information our trace is no longer a functional (straight-line) program.
 
-        The basic way to solve this, the naïve method, would be to attach an array of traces to the map operator, so they can be followed to derive the correct results.
-        To easily do this we extend our \texttt{Traced} ADT with a special map constructor (\texttt{TMap}).
-        We show this in Listing \ref{lst:trace_naive}.
-        We will also express our generate operation as a combination of the iota and map operations here.
+        The intuitive way to solve this, the naïve method, would be to attach an array of traces to the map operator, so they can be followed to derive the correct results.
+        Similarly, we can do this for the generate and fold operations.
+        To easily do this we extend our \texttt{Traced} ADT with a special map constructor (\texttt{TMap}), and a special fold constructor (\texttt{TFold}).
+        We show this in Listings \ref{lst:trace_naive} and \ref{lst:trace_fold_naive}.
+        We will also express our generate operation as a combination of the iota and map operations here, which saves us from writing a special case for generate.
         The traces in the \texttt{TMap} constructor correspond with the application of the function to be mapped to the individual item, for each item.
         The string references the array the map is performed on.
+        Meanwhile, the \texttt{TFold} operator references the folding process as a single sub-trace, and also the name of the map it is executed on.
 
         \begin{haskell}[caption={Tracing generate and map while keeping arrays, naïvely}, label=lst:trace_naive, gobble=12]
             data Traced
                 = $\ldots$
-                | TMap [Trace] String
+                | TMap  [Trace] String
+                | TFold Trace   String String
 
             trace :: TEnvironment -> Expression -> (TValue, Trace)
             trace n (EOp1 op e1)    =
@@ -665,17 +715,34 @@
                         in  (TArray sn (v : vs), xt' : xst)
         \end{haskell}
 
-        Now, while the naïve way is fine in functionality, it does again create some overhead (a trace for each item in the array) by splitting the trace into multiple smaller traces.
+        \begin{haskell}[caption=Naive fold tracing, label=lst:trace_fold_naive, gobble=12]
+            trace :: TEnvironment -> Expression -> (TValue, Trace)
+            $\dots$
+            trace n (EOp3 op e1 e2 e3) =
+                -- Trace the expression to operate on
+                let (v1, t1) = trace n e1
+                    (v2, t2) = trace n e2
+                    (v3, t3) = trace n e3
+                in  case (v1, v2, v3) of
+                    (TFunc f, TReal s2 _, TArray s3 _) -> 
+                        -- We use the earlier fold tracing function
+                        let (vf, tf) = traceArrayFold (foldFunction f) v2 v3
+                        in  (vf, TFold tf s2 s3 : t1 ++ t2 ++ t3)
+                    _                                  ->
+                        error "Type mismatch in trace/EOp3"
+        \end{haskell}
+
+        Now, while the naïve way for maps is fine in functionality, it does again create some overhead (a trace for each item in the array) by splitting the trace into multiple smaller traces.
         And if the function is the same for every item in the array, we may find ourselves saving a lot of redundant data.
         Now, this may be necessary: at the time we map a function over an array, we do not know if it will act the same for every input.
         Perhaps there is some control flow in the function body that checks if a number is even, or a factor of three, or something else entirely.
         In such a case, having a trace for each item may be strictly necessary.
         However, it also highlights for which functions it may not be: functions without control flow or branching.
         After all, these functions are little straight-line programs, and should act the same no matter on what input they are applied (except for producing a different result, of course).
-        Writing a function that checks if a the body of a lambda abstraction contains branching is very simple for this language: currently the only expression term that can introduce branching is the if-then-else statement.
-        Unfortunately, we cannot check that at the moment the we trace a map operator.
-        This is because any function here would already have been abstracted to a \texttt{TArray} value.
-        So, we would need to check for branching when we are abstracting the function and we also need a way to convey if a specific instance of \texttt{TFunc} contains branching or not.
+        Writing a function that checks if the body of a lambda abstraction contains branching is very simple for this language: currently the only expression term that can introduce branching is the if-then-else statement.
+        Unfortunately, we cannot check that at the moment when we trace a map operator.
+        This is because any function here would already have been abstracted to a \texttt{TFunc} value.
+        So, we would need to check for branching when we are abstracting the function, and we also need a way to convey if a specific instance of \texttt{TFunc} contains branching or not.
         We write branch-checking into functions in Listing \ref{lst:branching}.
         For most terms we can just commute the branch checking to the arguments of that term, but there are a couple exceptions.
         If-then-else statements are the definition of branching in our language, so they return `true', and no branching can occur in literal instantiation (\texttt{ELift}) or nullary operators (\texttt{Op0}) (literal instantiation can also be rewritten as a nullary operator), so they always return `false'.
@@ -700,6 +767,8 @@
             branchCheck _ (EOp0 _) = False
             branchCheck n (EOp1 _ e1) = branchCheck n e1
             branchCheck n (EOp2 _ e1 e2) = branchCheck n e1 || branchCheck n e2
+            branchCheck n (EOp3 _ e1 e2 e3) =
+                branchCheck n e1 || branchCheck n e2 || branchCheck n e3
             
             -- If our variable contains a function we need to check what it has the branching flag set to
             branchCheck n (ERef s1) = case n ! s1 of
@@ -711,7 +780,7 @@
         The basic idea here is that we can essentially perform vectorization of our function on the array in our trace: we rewrite the trace such that the function is ``applied'' to the whole array, rather than its individual items.
         Now without support for this in our language, this basically amounts to syntactic sugar in our trace, however it will provide us with a much clearer trace.
         This has been done in Listing \ref{lst:vectorize}, where we again add a map operator to our \texttt{Traced} ADT.
-        This is because we may need to use the naïve method if a function contains branching and we cannot vectorize it.
+        This is because we may need to use the naïve method if a function contains branching, and we cannot vectorize it.
         In Listing \ref{lst:vectorize} we still use \texttt{traceMapNaive} to actually map over our array.
         This is because we need to get the value of the array regardless, and our function value (\texttt{TFunc}) will return traces regardless if we need them or not.
         Then we can just take the first trace returned by the naïve map tracing, and rename all references to the first item of both the new and old arrays, to references of the whole old and new arrays respectively.
@@ -774,7 +843,111 @@
             deepRename :: String -> String -> Trace -> Trace
         \end{haskell}
 
-        What is important to take away from the shenanigans with the generate and map operators is that, whilst our definitions and correctness assertions from Sections \ref{sec:tracing} and \ref{sec:correctness} gave us some guidance, there is ultimately no single way to trace everything.
+        We can also be more efficient with fold, rather than doing a sequential left-to-right fold.
+        Like vectorized maps, we can execute folds using data parallelism if the folding function is vectorizable.
+        A data parallel fold is a little more in-depth than a vectorized mapping operation.
+        Mainly because, at some point, fold requires some sequential steps.
+        However, it is not too complicated: we segment the original array over a number of threads, and let those run sequentially.
+        Then we gather those results in another array, and sequentially fold over that array to finish the fold.
+        Of course, for this to work properly every time, the function used in the fold needs to be associative, so it does not matter we run the fold out of order.
+        We implement this two-step data-parallel fold in Listings \ref{lst:trace_foldv} and \ref{lst:segmented}, where we also introduce a new constructor to the \texttt{Traced} data type, namely \texttt{FoldV}.
+        We see in Listing \ref{lst:segmented} how we distribute the work over the number of threads available to us (represented by the \texttt{threads} variable).
+        For each thread we still use the original function (that traces away arrays), because it performs the (partial) fold, and produces the correct trace.
+        Then, when we have no threads left, we combine our results and trace the fold over that as well.
+        It should be clear that the code in Listings \ref{lst:trace_foldv} and \ref{lst:segmented} do not run the code using parallelism.
+        Instead, they are just a sequential implementation meant to show off how we could build a parallel variant.
+
+        \begin{haskell}[caption=Data parallel fold tracing, label=lst:trace_foldv, gobble=12]
+            data Traced
+                = $\dots$
+                -- We leave the original TFold untouched
+                | TFold Trace String String
+                -- And add a new one for vectorized folds
+                | TFold Trace String Trace  String String
+                -- And we add a new helper constructor used for foldv
+                | TJoin [String]
+
+            trace :: TEnvironment -> Expression -> (TValue, Trace)
+            $\dots$
+            trace n (EOp3 op e1 e2 e3) = 
+                let (v1, t1) = trace n e1
+                    (v2, t2) = trace n e2
+                    (v3, t3) = trace n e3
+                in  case (v1, v2, v3) of
+                    (TFunc b f, TReal s2 v2', TArray s3 _) ->
+                        if   b  
+                             -- If branching is present, use the old method
+                        then let (vf, tf) = traceArrayFold f v2 v3
+                             in  (vf, TFold tf s2 s3 : t1 ++ t2 ++ t3)
+                             -- If not, we will use the segmented fold,
+                             -- which returns the final value, the traces for the first step,
+                             -- the traces for the second step, and the name of the join variable
+                        else let (vf, tf1, js, tf2) =
+                                    segmentedFold (foldFunction f) v3 s2 v2'
+                             in (vf, TFoldV tf1 js tf2 s2 s3 : t1 ++ t2 ++ t3)
+
+            segmentedFold :: (TValue -> TValue -> (TValue, Trace))
+                -> TValue -> String -> [Float]
+                -> (TValue, [Trace], String, Trace)
+            -- See Listing !*\ref{lst:segmented}*!
+        \end{haskell}
+
+        \begin{haskell}[caption=Segmented fold, label=lst:segmented, gobble=12]
+            segmentedFold :: (TValue -> TValue -> (TValue, Trace))
+                -> TValue -> String -> [Float]
+                -> (TValue, [Trace], String, Trace)
+            segmentedFold f z sa xs =
+                controller threads [] xs [] []
+                where
+                    controller :: Int -> [Trace] -> [Float] -> [Float]
+                        -> [String] -> (TValue, [Trace], String, Trace)
+                    -- When all threads are done, combine them in to one
+                    controller 0 ts _   rs srs =
+                        let s  = getName
+                            z' = TReal (s ++ ``!0'') (head rs)
+                            a' = TArray s (tail rs)
+                            (vc, tc) = traceArrayFold f z' a' 1
+                            js = getName
+                            tc' = (js, TJoin srs) : tc
+                        in  (vc, ts, js, tc')
+
+                    controller t ts xs' rs srs =
+                        -- If we can evenly distribute the rest of the array over the next threads
+                        | mod (length xs' + 1) t == 0 =
+                            if   length xs' == length xs
+                            then let size = length xs' `div` threads
+                                     sarr = take (size - 1) xs'
+                                     (vf, tf) = traceArrayFold f z (TArray sa sarr) 0
+                                 in  case vf of
+                                     TReal sr r -> controller (t - 1) (tf : ts)
+                                        (drop (size - 1) xs') (r : rs) (sr: srs)
+                            else let size = length xs' `div` threads
+                                     sarr = take size xs'
+                                     l    = length xs - length xs'
+                                     z'   = TReal (sa ++ `!' : show l) (head sarr)
+                                     (vf, tf) = traceArrayFold f z' (TArray sa (tail sarr)) l
+                                 in  case vf of
+                                     TReal sr r -> controller (t - 1) (tf : ts) 
+                                        (drop size xs') (r : rs) (sr: srs)
+                        | otherwise               =
+                            if   length xs' == length xs
+                            then let size = length xs' `div` threads
+                                     sarr = take size xs'
+                                     (vf, tf) = traceArrayFold f z (TArray sa sarr) 0
+                                 in  case vf of
+                                     TReal sr r -> controller (t - 1) (tf : ts)
+                                        (drop size xs') (r : rs) (sr: srs)
+                            else let size = length xs' `div` threads + 1
+                                     sarr = take size xs'
+                                     l    = length xs - length xs'
+                                     z'   = TReal (sa ++ `!' : show l) (head sarr)
+                                     (vf, tf) = traceArrayFold f z' (TArray sa (tail sarr)) l
+                                 in  case vf of
+                                     TReal sr r -> controller (t - 1) (tf : ts)
+                                        (drop size xs') (r : rs) (sr: srs)
+        \end{haskell}
+
+        What is important to take away from the shenanigans with the generate, map, and fold operators is that, whilst our definitions and correctness assertions from Sections \ref{sec:tracing} and \ref{sec:correctness} gave us some guidance, there is ultimately no single way to trace everything.
         The most important factor here is to keep reminding ourselves of the information we wish to keep in the trace.
         Not only the value types, but we also need the information needed to actually run the trace as a program.
         Keeping this in mind, it becomes much more obvious how to trace these operations.

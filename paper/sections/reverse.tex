@@ -4,7 +4,7 @@
     Recall how in AD we wish to calculate the derivative of a computer program.
     To do this (in reverse-mode) we wish to calculate the adjoints for the inputs.
     However, to calculate these adjoints, we would first need to calculate the adjoints for the individual computational steps in the program that contribute to an input's sensitivity.
-    Of course, it are these steps that are represented in the trace of a program.
+    Of course, it is these steps that are represented in the trace of a program.
     In fact, there is a really close relation between the tapes discussed in Section \ref{sec:bg_ad} and tracing.
 
     The main difference between the tape used for AD and a regular trace as laid out in Section \ref{sec:tracing}, is the lack of intermediate values in the latter.
@@ -88,7 +88,7 @@
     Furthermore, while we can also deduce some order from the naming of the intermediate steps (e.g. $r_1$ was done before $r_2$), we should not do this programmatically, because we wish to reserve parallelism opportunities, but also because some intermediate steps might be hidden in the sub-trace of a map.
     Luckily, we can also discover the ``ancestors'' of any step in the trace by looking at the traced operation.
     For $r_2$ the traced operation was \texttt{TOp2 Add "x1" "r1"}, so we know that for our reverse pass, we next want to look at $x_1$ and $r_1$, as their adjoints (or part of them) rely on the value of $\bar{r}_2$ (which we can also see in Equation \ref{eq:reverse_ex2}).
-    For now we will gloss over how we decide which ancestor adjoint to compute first, and just look at the adjoint of $r_1$.
+    For now, we will gloss over how we decide which ancestor adjoint to compute first, and just look at the adjoint of $r_1$.
     
     We know that $\bar{r}_1$ is dependent on $\bar{r}_2$, but how exactly is defined by the operation that produced $r_2$, which in this case is addition.
     Now, addition is really simple, as the derivative of addition of two values is the addition of the derivatives of those values.
@@ -143,20 +143,20 @@
     Since we need to store intermediate values anyway, keeping a counter for each of these variables seems like little extra work.
     Now, on the reverse pass we can check these reference counters and every time we find part of the adjoint for a variable, we decrement its associated counter.
     If a counter has not reached zero after we have decremented it, we know its adjoint is not yet complete, and we can ignore it for now.
-    If it has we can add up all the parts of the adjoint and continue from there.
+    If it has, we can add up all the parts of the adjoint and continue from there.
     This is actually very similar to Kahn's algorithm for topological sorting\cite{kahn1962topological}, except that rather than sorting the graph beforehand, we immediately process the nodes as they become available (have all their incoming adjoints).
     This means we actually do execute the reverse pass in topological order, but by discovering this order as we go it allows us to not strictly do the reverse pass sequentially, something of which we will discuss the merits of further on.
     Provided there is only one output to the program, we know that all reference counters will eventually reach zero, and therefore we are assured we will calculate all adjoints.
     However, this provision is not as clear-cut as it seems.
-    Currently our DSL does not really have any room for multiple outputs, and as it is functional does not support any side-effects.
+    Currently, our DSL does not really have any room for multiple outputs, and as it is functional does not support any side effects.
     Instead, to provide multiple outputs, currently the only way is to output an array.
     If we keep arrays in the trace, an array as output would still count as a single value.
-    There is a slight discrepancy between the trace and the output if we trace away arrays however: the program will still output an array, but only its individual items are able to be found in the trace.
+    There is a slight discrepancy between the trace and the output if we trace away arrays however: the program will still output an array, but only its individual items are present in the trace.
     This is not really a big problem, since the name of these individual outputs are derived from the name of the full array, but also because it would make little sense to trace away arrays from a program that outputs an array.
 
     So, we find that our trace needs to be extended with two additional things in the forward pass: intermediate values and reference counters.
     We do this in Listing \ref{lst:forward}, in the data type \texttt{Forward}.
-    We also introduce a clone of the \texttt{Traced} data type as \texttt{Forwarded}, as we need to reference the new \texttt{Forward} type in the constructors for maps and vectorized maps.
+    Also, we introduce a clone of the \texttt{Traced} data type as \texttt{Forwarded}, as we need to reference the new \texttt{Forward} type in the constructors for maps and vectorized maps.
     We also replace the list structure of \texttt{Trace} with a key-value map.
     This is not strictly necessary, but it allows us to more quickly access the values in the map, while also clearly communicating there is no pre-set order to the trace.
     Each value in a \texttt{Forward} map is a 3-tuple consisting of respectively: the intermediate value, the traced operation performed, and the reference counter for this variable.
@@ -165,11 +165,13 @@
     \begin{haskell}[caption=Forward pass data structures, label=lst:forward, gobble=8]
         data Forwarded
             = FLift TValue
-            | FOp0  Op0
-            | FOp1  Op1       String
-            | FOp2  Op2       String String
-            | FMap  [Forward] String
-            | FMapV Forward   String
+            | FOp0   Op0
+            | FOp1   Op1       String
+            | FOp2   Op2       String String
+            | FMap   [Forward] String
+            | FMapV  Forward   String
+            | FFold  Forward   String String
+            | FFoldV Forward   String Forward String String
 
         type Forward = Map String (TValue, Forwarded, Int)
     \end{haskell}
@@ -181,12 +183,11 @@
         So, it should take in an object of the \texttt{Forward} type and output a map containing the adjoints.
         In Listing \ref{lst:reverse_def} we define three constructors for adjoints: one for arrays, one for sparse arrays (represented by a single index and the associated value), and one for real values.
         We also define the \texttt{Reverse} type, which will contain these adjoints, and which is returned at the end of the reverse pass.
-        The \texttt{Reverse} type maps the names of each part of the calculation to a 2-tuple containing a list of contributions of other adjoints, and its own final adjoint which uses maybe to indicate whether or not it has been calculated yet.
+        The \texttt{Reverse} type maps the names of each part of the calculation to a 2-tuple containing a list of contributions of other adjoints, and its own final adjoint which uses maybe to indicate whether it has been calculated yet.
 
-        \begin{haskell}[caption=Definition of the \texttt{Reverse} type, label=lst:reverse_def, gobble=12]
+        \begin{haskell}[caption=Definition of the \texttt{Adjoint} type, label=lst:reverse_def, gobble=12]
             data Adjoint
                 = AArray  [Float]
-                | ANull
                 | AReal   Float
                 | ASparse Int Float
 
@@ -206,18 +207,18 @@
         Given some ``current'' point in the computational graph, we look up the adjoint (which should have been established by now) and the forward trace item for this point.
         If the operation in the trace for the current point uses no other values (i.e. has no ``ancestors''), we are done here and return the reverse mapping that contains all the adjoints we have found.
         If the operation does have ancestors, we look at the operation itself to determine how to transform the current point's adjoint for its ancestors.
-        If this transformation requires any intermediate values, we can look them up in the forward pass.
+        Then, if this transformation requires any intermediate values, we can look them up in the forward pass.
         Given the transformed adjoints, we assign these to the adjoint accumulation list for each ancestor.
         We also check if this list now has enough adjoints to match the reference counter in the forward pass.
         If it does not, we are done and can return the reverse mapping.
-        However if it does, we add up all the partial adjoints in the list together into the final adjoint and place it in the reverse mapping.
+        However, if it does, we add up all the partial adjoints in the list together into the final adjoint and place it in the reverse mapping.
         Then finally, we start the same process for each ancestor of the current node that has its complete adjoint ready.
 
         Now, let us talk implementation.
         We define two reverse pass functions, \texttt{reverse} and \texttt{resolve}, of which the first will only be a wrapper for the final value and its adjoint to be inserted, and the latter will actually perform the reverse pass.
         Both are shown in Listing \ref{lst:reverse_func}.
         Listing \ref{lst:reverse_func} also introduces two helper functions: \texttt{combineAdjoints} for adding partial adjoints together into the final adjoint of a step in the computational graph, and \texttt{assignAdjoints} for transforming and assigning the adjoints to the ancestors of the current node.
-        We will safe the intricate details of \texttt{combineAdjoints} and \texttt{assignAdjoints} for later.
+        We will save the intricate details of \texttt{combineAdjoints} and \texttt{assignAdjoints} for later.
         Finally, we use the \texttt{explore} helper function to try and resolve all the ancestors of the current node as well.
 
         \begin{haskell}[caption=Definition of the reverse pass functions, label=lst:reverse_func, gobble=12]
@@ -232,7 +233,7 @@
                 Just (as, Nothing) -> case Map.lookup s f of
                     -- Find the step taken and the reference counter in the forward pass
                     -- If it is present, check whether or not the adjoint array contains
-                    -- items equal to the reference counter (so we know it's all there).
+                    -- items equal to the reference counter (so we know it is all there).
                     Just (fd, c, _) -> if   length as >= c
                                        -- If all partials are present, make the complete
                                        -- adjoint and update the reverse map
@@ -242,7 +243,7 @@
                                                 (r2, sa) = assignAdjoints fd s a f r1
                                             -- Then try all the ancestors as well
                                             in  explore sa r2
-                                       -- If we're not ready, just return the current
+                                       -- If we are not ready, just return the current
                                        -- reverse map
                                        else r
                     -- If the named variable isn't present in the forward trace, we've
@@ -252,7 +253,7 @@
                 -- then we must already be done here, so just return the current reverse
                 -- mapping
                 Just _             -> r
-                -- If the adjoint is missing from the reverse mapping entirely, it's because
+                -- If the adjoint is missing from the reverse mapping entirely, it is because
                 -- we haven't run into it at all yet, so we can also return the reverse mapping
                 -- as it is.
                 Nothing            -> r
@@ -292,7 +293,7 @@
         This means we move back to $r_1$'s explore function, which leads us to $x_2$.
         Here we find again that we can use \texttt{combineAdjoints} to get $x_2$'s final adjoint, and with\\\texttt{assignAdjoints} that $x_2$ has no further ancestors.
 
-        This then moves us back to the end of the explore function in $r_1$, which now finished returns the update reverse mapping to the end of the explore function of $r_2$, which also finishes to return the updated reverse mapping to the original \texttt{reverse} function, and return our reverse pass to the programmer.
+        This then moves us back to the end of the explore function in $r_1$, which now finished, returns the updated reverse mapping to the end of the explore function of $r_2$, which also finishes, returning the updated reverse mapping to the original \texttt{reverse} function, and return our reverse pass to the programmer.
         
         \begin{figure}[p]
             \begin{adjustbox}{addcode={\begin{minipage}{\width}}{\caption{%
@@ -315,7 +316,7 @@
     \subsection{Combining Adjoints}
         To go from a list of partial adjoints to a single combined adjoint is not quite as trivial as just adding all together.
         As mentioned before, in Listing \ref{lst:reverse_def}, we defined three types of adjoints, an array, a sparse array, and a real number adjoint.
-        The real number adjoint is not complicated, it is the default adjoint and they can be freely added together.
+        The real number adjoint is not complicated, it is the default adjoint, and they can be freely added together.
         The difficulty comes in with the array adjoints.
         These adjoints are produced by operations on arrays.
         It will help us to realize now that the adjoint of an array with length $n$, will also have length $n$.
@@ -324,7 +325,7 @@
         Knowing this we can start to discover how to add these adjoints together.
         Let us start by discussing adding the sparse and non-sparse array adjoints, as they are almost as simple as adding two real adjoints.
         Since we only add these together as partial adjoint of a single step in the computational graph, we know that the array adjoints whether sparse or not will always have the same length when added together.
-        This means we can just add these arrays of adjoints together elementwise, substituting $0$ for all undefined items in the sparse array.
+        This means we can just add these arrays of adjoints together element-wise, substituting $0$ for all undefined items in the sparse array.
 
         Only if we add two sparse arrays together, we might need to look up the length of the original array in the forward pass to know the length of these sparse arrays (or we could extend the sparse array constructor to allow for multiple defined items).
 
@@ -335,13 +336,13 @@
         Now provided that $a$ has some partial array adjoint (or is represented by an adjoint array filled with zeroes) we must think of a way to add $b$ to the appropriate items.
         Now what these appropriate items in $a$ are, and how $b$'s adjoint needs to be transformed, are of course dependent on the function we fold over array $a$.
 
-        However, we will find that fold takes in an anonymous function, meaning that we need a special case for fold anyways.
+        However, we will find that fold takes in an anonymous function, meaning that we need a special case for fold anyway.
         Only for our unary sum operator we perform a fold that is pre-programmed.
         We know that the sum's result is influenced once by each array item, and from the differentiation rules of addition we know that the adjoint of the sum's result is just moved to its ancestors without transformation or touching intermediate values.
-        This means that we can just just add the sum's adjoint to each array item.
+        This means that we can just add the sum's adjoint to each array item.
 
         The only other way to get from an array to a real value in our language is by using array indexing.
-        However this is very simple as well, as indexing does not change anything to the adjoint either.
+        However, this is very simple as well, as indexing does not change anything to the adjoint either.
         Since indexing refers to a specific item in the array, our partial adjoint for the array becomes a sparse array with the incoming adjoint on the indexed position.
 
         We see the implementation of the helper function \texttt{combineAdjoints} in Figure \ref{lst:combine}, where we also define a binary adjoint addition operator \lstinline{(<+)} to do most of the heavy lifting.
@@ -386,7 +387,7 @@
     \clearpage
     \subsection{Differentiating Operations}
         The actual differentiation rules are applied in the \texttt{assignAdjoints} function, where we take the complete adjoint of a node in the computational graph, transform it according to the operation performed in that node, and then add it as a partial adjoint to its ancestors.
-        Its especially the transformation that means we need to write different differentiation rules for almost every operation.
+        It is especially the transformation that means we need to write different differentiation rules for almost every operation.
 
         Let us start with the easy part, the unary and binary mathematical operators.
         In our DSL these are: addition, multiplication, subtraction, and sine.
@@ -467,8 +468,6 @@
             $\dots$
         \end{haskell}
 
-        % NOTE: While an implementation detail, FJoin (also unmentioned in the forward pass) has a simple adjoint too, used by FFold and FFoldV
-
         \subsubsection{The reverse pass on map operations and function closures}
             Unsurprisingly, the reverse pass is slightly more in-depth on array operations, like map.
             For a regular non-vectorized map, this is still fairly easy to wrap our heads around.
@@ -498,7 +497,7 @@
 
             Luckily for us the main difficulty with this problem is noticing it.
             Now we know that we have to extract this data into the main reverse pass, we can simply merge the item's reverse pass with the main one.
-            We only need to be wary of extracting the partial adjoints for the original map, and combining them together, so we do not overcount the number of partial adjoints against the reference counter of the original array (that in the forward pass only got increased by one for use in the map operation.)
+            We only need to be wary of extracting the partial adjoints for the original map, and combining them together, so we do not over count the number of partial adjoints against the reference counter of the original array (that in the forward pass only got increased by one for use in the map operation.)
             We see the whole process of finding the adjoint of a map in Listing \ref{lst:assign_map}.
 
             \begin{haskell}[caption=Implementation of \texttt{assignAdjoints} for the map operation, label=lst:assign_map, gobble=16]
@@ -537,19 +536,19 @@
                             error "Type mismatch in assignAdjoints/FMap/toSparse"
             \end{haskell}
 
-            Now with the nonvectorized map taken care of, we can move on to the vectorized map.
+            Now with the non-vectorized map taken care of, we can move on to the vectorized map.
             While the idea of finding the adjoint to the map remains the same of course, we now find ourselves with a new problem: a lack of intermediate values.
             Recall that when tracing a vectorized map, we only stored the trace of a single item in the array.
             This was possible because, as we had found the mapped function would not branch, the trace would be the same for each item.
             Now, provided that we did store all intermediate values for this mapping operation, we can perform the same reverse map for the vectorized trace, as with the nonvectorized trace.
 
-            \paragraph*{On Parallelism}
+            \paragraph*{On map parallelism}\mbox{}\\
                 It should be clear that there is a major inherent parallelism opportunity for each of the mapping operations.
                 For the vectorized map this is very clear: data parallelism.
                 This is true in evaluation, and is still true in the reverse-pass.
-                Namely as the reverse pass is the same for all items, we can use a data parallel mapping function to run the reverse pass in a vectorized manner as well.
+                Namely, as the reverse pass is the same for all items, we can use a data parallel mapping function to run the reverse pass in a vectorized manner as well.
 
-                For the nonvectorized map we cannot be sure the operations are the same for each item.
+                For the non-vectorized map we cannot be sure the operations are the same for each item.
                 This means that data parallelism is off the table, however we can still use task parallelism.
                 This would not be hard to implement as each item has its own reverse call which can easily be run task parallel.
                 Of course, one would need to exercise some caution with the collection of the partial adjoints and reverse maps, but this is not a new problem.
@@ -580,11 +579,15 @@
                     in  (addAdjoint s1 aa (addAdjoint s2 az), [s1, s2])
             \end{haskell}
 
-            \cc{Dit neemt aan een stukje in de tracing bestaat over waarom een vectorized fold maar uit twee stappen bestaat, maar dat moet ik er nog bij schrijven (inclusief alle referenties naar fold in het algemeen)}
             As discussed, our vectorized fold operation uses a segmented fold followed by a sequential fold.
             Of course if we have more threads available than we have items in our array, we use a sequential fold instead.
             Since in the reverse-pass we pass over the second step before the first step, it is important to recall that to properly gather the results from the first step sub-traces, we use an \texttt{FJoin} constructor, which we can use in the reverse pass to pass the adjoints back to the correct sub-trace.
             We can see this all come together in the implementation in Listing \ref{lst:assign_foldv}.
+
+            Of course, when we encounter the \texttt{FJoin} constructor in the reverse pass, we still need to apply the reverse-pass on it.
+            However, since the \texttt{FJoin} is not a real numerical operation, it also has no derivative.
+            So we just ignore \texttt{FJoin}, as it is the starting point for the second step anyway, it has no values depending on its derivative.
+            The derivative it does get is an array containing derivatives for the joined values (from the first step), to be used in the reverse-pass for the first step.
             
             \begin{haskell}[caption=Reverse pass over a vectorized fold, label=lst:assign_foldv, gobble=16]
                 assignAdjoints :: Forwarded -> String -> Adjoint -> Forward -> Reverse
@@ -620,7 +623,7 @@
                         getJoin :: [String]
                         getJoin = case f2 Map.! q of
                             (FJoin ss, _, _) -> ss
-                            _                -> error "Type mismatch in assignedAdjoints/FFoldV"
+                            _                -> error "Type mismatch in assignAdjoints/FFoldV"
                         
                         -- Get the updated reverse mapping, the adjoint for the array,
                         -- and the adjoint for the identity element
@@ -639,3 +642,111 @@
                                 Nothing      -> (rx', ax : axs, zxs)
             \end{haskell}
 
+            \paragraph{On the sum operation}\mbox{}\\
+                The DSL implements a special kind of fold as a unary operator, namely the sum operation.
+                Recalling that the sum operator just adds up the values in an array, we can implement this as a fold over the array, using the addition operator and $0$ as the identity element.
+                However, the reverse pass over a sum operation is very simple.
+                Starting with some real adjoint $a$ at the result of the sum, this adjoint is then passed through all the addition operators to all the members of the original array.
+                This allows us to quickly make the adjoint for the original array, namely an array adjoint where all values are $a$.
+                Taking such a shortcut also means leaving out the adjoints for all intermediate calculations, however since we intuitively know what they are for sum, this should not really pose a problem.
+                In Listing \ref{lst:assign_sum} we see the implementation of the \texttt{assignAdjoints} function for the sum operation.
+
+                The main takeaway here is not really about sum, however.
+                It is that special cases exist in the reverse pass, even if they seem somewhat generic in the regular program.
+                Finding these special cases can increase the speed of the reverse pass.
+                While the sum operation might not be too exciting an example, it highlights that we should be on the lookout for these special cases, especially for the more complex ones (as they will profit more from the potential speed-up.)
+
+                \begin{haskell}[caption=Implementation of the sum operator in \texttt{assignAdjoints}, label=lst:assign_sum, gobble=20]
+                    assignAdjoints :: Forwarded -> String -> Adjoint -> Forward -> Reverse
+                        -> (Reverse, [String])
+                    $\dots$
+                    assignAdjoints (FOp1 op s1) _ a f r = case (op, a) of
+                        $\dots$
+                                           -- We need to get the arrays length for the adjoint
+                        (Sum, AReal a') -> case getValue s1 f of
+                            (FArray _ xs) ->
+                                (addAdjoint s1 (AArray $\$$ replicate (length xs) a') r, [s1])
+                            _             -> error "Type mismatch in assignAdjoints/FOp1/Sum"
+                    $\dots$
+                \end{haskell}
+
+            \paragraph{On fold parallelism}\mbox{}\\
+                Fold parallelism is also a little more complicated than map parallelism.
+                An easy way to think about why, is by visualizing the flow of data in both operations.
+                In map, we start with an array of $n$ items, and end with one.
+                Every array element ``flows'' from some index in our original array to the same index in the resulting array, never intersecting with any of the other elements.
+                With folding operations, it is especially this intersection of the dataflows that makes it hard to parallelize in the reverse pass.
+                If we imagine the values in the original array as being funnelled into the final result, we quickly realize that there is no operation that does the opposite: there is no ``unfold'' operation.
+                However, both the individual segments in the first step of the fold, and the combination in the second step are relatively simple sequential folds.
+                While the intermediate values in a folding operation are ignored in regular use, we actually store them as part of our forward traces.
+                This means that our sequential folds are more like a scan, a left-to-right scan to be precise.
+                Realizing this, we can imagine our reverse-pass as a right-to-left scan, applying the fold (or calculating its adjoints) in reverse if you will.
+                Of course this works on sequential fold, but it works on the data-parallel fold as well, and we can maintain almost the same parallelism as before.
+                First, we calculate the adjoints in the second step using a sequential right-to-left scan, and then we do the same for the segments in the first step, now in parallel.
+                Of course, the resulting adjoint arrays of each segment would still need to be combined sequentially, which is not necessary in the regular fold.
+                Still, this preserves the data-parallelism present in the fold, which was our goal.
+            
+    \subsection{Task parallelism in the reverse pass}
+        We have paid some attention to data parallelism for data parallel operations, namely map and fold.
+        However, we can also more generally implement task parallelism on the reverse pass as a whole.
+        This is mainly why we have previously been adamant about not sorting the array, and having unique but non-sequential names (they may in fact be sequential, but should not be treated as such): it means we can execute the reverse pass in any order as long as we make sure to keep an eye out for missing partial adjoints.
+        Again, we compare the number of collected partial adjoints of a computational step, to the number of references made to that step (according to the forward pass), and we only combine the adjoints if they match.
+        This way we know we do not calculate the step's adjoint prematurely, but we also know that if we cannot calculate the adjoint, another part of the reverse pass will, as it will provide the last piece of that adjoint.
+
+        Eventually this comes together in the fact that we may perform the reverse pass completely asynchronously.
+        We start with one thread at the end of the computation, but whenever part of the computation assigns adjoints to multiple ancestors, we can check these ancestors using task parallelism.
+        We can just spawn new threads to deal with all but one ancestor, and continue the original thread on the remaining ancestor, and combine results back into the final result later.
+        For large or complex traces this might actually allow us to significantly speed up our reverse pass.
+
+        It should be noted that our current implementation does not quite allow for this kind of task parallelism, because right now it returns the reverse mapping back to the starting point, meaning that the through-putting of the reverse mapping from one ancestor to the next forces sequential execution.
+        However, this can easily be fixed using a mutable variation of the reverse mapping.
+        While this would violate purity (which does not allow for mutable variables), the speed-up might be worth it.
+
+    \subsection{Finding Complexity}
+        With now the reverse pass figured out, we can start talking about estimating a time complexity for this program.
+        We will try to do so with regard to the execution time of the regular program, which we will denote with $n$, where $n$ is a stand-in for the number of steps in our execution graph.
+        This means that regardless of the functions actual complexity, for this section the complexity of executing a function consisting of $n$-substeps, would have a complexity of $O(n)$.
+
+        For the forward pass we find that any recording of references to reference counters, or storing intermediate values should only provide us with a small overhead on the regular execution of the program.
+        After all, we only count direct references, and we already have to calculate the intermediate values for execution anyway, storing them is not much of a problem.
+        Of course, we do gain some time complexity overhead depending on the storage method.
+        For tracing we used a built-in Haskell list, which can store new items in $O(1)$ time.
+        However, for ease of use, we switched to a map (associative array) when we expanded to the forward pass.
+        While of course lookup and getting in a map of size $m$ is quicker than in an list of size $m$ ($O(\log m)$ as opposed to $O(m)$), insertion on a map also takes $O(\log m)$ time.
+        This means that we can assume our forward pass roughly takes $O(n\log n)$ time: for $n$ steps in the execution, we record intermediate values at the cost of $O(\log n)$ time
+
+        Of course, this overhead in the forward pass, allows us to safe a little time in the reverse pass.
+        Let us assume that for each step in our reverse pass, we need to retrieve the intermediate value at a cost of $O(\log n)$.
+        Furthermore, we also need to write a partial adjoint to each ancestor of the step.
+        Since we store these (partial) adjoints in a map as well, we know this will take $O(\log n)$ time to store for each ancestor.
+        Luckily for us, each operation has only at most three ancestors, so we can still keep this overhead at $O(\log n)$.
+
+        Unfortunately, not all can currently be covered in a $O(\log n)$ overhead, because of the array operations.
+        After finishing a map or fold operation, we need to join the reverse passes over the sub-traces back into the main trace.
+        This union operation takes $O(m)$ time, where $m$ is the size of the smaller map.
+        There are two ways to remedy this however.
+        First, we could make the reverse mapping a mutable variable.
+        This way we can write new adjoints to the main reverse mapping directly, meaning we do not need to do any union operations.
+        In a similar vein we could write a special reverse function for sub traces like this, that produce a new reverse mapping based on what happened in the sub-traces, while keeping the main trace up until that point intact.
+        This means we can maintain purity, however it also means that we can not parallelize, as every sub-trace would need the reverse mapping of the previous sub-trace.
+        (Or we could union these sub-trace reverse mappings again, but that would bring us back to the problem of union's time complexity.)
+
+        Regardless of how we wish to solve it, the current time complexity of the overhead produced by these operations is $O(n)$, meaning the time complexity of the reverse map becomes $O(n^2)$.
+        When allowing mutability on the reverse mapping we could bring this down to an $O(\log n)$ overhead, or a time complexity of $O(n\log n)$.
+        
+        This brings the total time complexity of the whole AD process as described to $O(n^2+n\log n)\approx O(n^2)$, which is not great.
+        However, we can also see that this overhead occurs due to implementation details.
+        For instance, in general we would describe the insertion and lookup complexity of an associative array (with size $m$) as $O(1)$ rather than $O(\log m)$, which eliminates these logarithmic overheads from the run altogether.
+        However, due to implementation details in the mapping (provided by the containers package in Haskell), this turns out to be $O(\log m)$.
+        Also, for the unions, we claim an $O(n)$ overhead, which is truly the worst case, assuming that all adjoints are already present in the reverse mapping (but we somehow need to add some more).
+        Generally (and ideally), the reverse mappings for these sub-traces would be much smaller than those of the main reverse mapping, meaning a smaller overhead as well.
+        If we assume the largest of these sub-trace reverse mappings has some size $k\ll n$, and we use the regular insert/lookup time complexity of $O(1)$, we find an idealized time complexity of $O(nk+n)$, which is much closer to the optimal time complexity $O(n)$ (as the complexity of the reverse-pass is ideally upper-bounded by $6\cdot n$).
+
+        Finally, the speed-up we expect from task and data parallelism is wholly dependent on the shape of the computational graph, and the number of threads we can run simultaneously.
+        For task parallelism, the ideal shape of the computational graph would be a tree (with the final result as the root), because it will allow us to make use of as much task parallelism as possible, without running into dead ends (due to missing partial adjoints).
+        Similarly, data parallelism provides great advantage for vectorizable operations on large arrays.
+        Of course, this dependency on the shape of the program means we cannot make a general statement about how these speed-ups would actually translate to time complexity.
+        
+        It should be noted though, that especially data-parallelism has been left by the wayside by the large AD libraries, in favour of machine parallelism (where data and instructions are separated over multiple machines).
+        While theoretically more scalable than regular data parallelism, machine parallelism is useful mostly for specific use cases like machine learning, and is also financially more costly.
+        This means that machine parallelism is mostly reserved for large companies who can leverage multiple machines or even data centres to do this, while leaving groups with less resources out in the cold somewhat.
