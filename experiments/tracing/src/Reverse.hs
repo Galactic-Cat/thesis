@@ -1,7 +1,7 @@
 {-# LANGUAGE InstanceSigs #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
-module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
+module Reverse (reverse, Adjoint (AReal, AArray, ASparse), Reverse) where
     import Prelude hiding (reverse)
     import qualified Data.Map.Strict as Map
     import Data.Map (Map ())
@@ -15,7 +15,7 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
         = AArray  [Float]
         | AReal   Float
         | ASparse Int Float
-    
+
     instance Show Adjoint where
         show :: Adjoint -> String
         show (AArray    as) = "(AArray " ++ show as ++ ")"
@@ -40,7 +40,15 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
     addAdjoint :: String -> Adjoint -> Reverse -> Reverse
     addAdjoint s a r = case Map.lookup s r of
         Just (as, _) -> Map.insert s (a : as, Nothing) r
-        Nothing      -> Map.insert s ([a], Nothing) r
+        Nothing      -> case break (=='!') s of
+            (array, '!':index) -> case Map.lookup array r of
+                Just (as, _)   -> Map.insert array (sparsify a (read index) : as, Nothing) r
+                Nothing        -> Map.insert array ([sparsify a (read index)],    Nothing) r
+            _                  -> Map.insert s ([a], Nothing) r
+        where
+            sparsify :: Adjoint -> Int -> Adjoint
+            sparsify (AReal a') i = ASparse i a'
+            sparsify a'         _ = a'
 
     assignAdjoints :: Forwarded -> String -> Adjoint -> Forward -> Reverse -> (Reverse, [String])
     assignAdjoints (FOp1 op s1) _ a f r = case (op, a) of
@@ -60,7 +68,7 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
             _                        -> error "Type mismatch in assignAdjoints/FOp2/Mul"
         (Sub, AReal a') -> (addAdjoint s1 a (addAdjoint s2 (AReal $ -a') r), [s1, s2])
         _               -> error "Type mismatch in assignAdjoints/FOp2"
-    
+
     assignAdjoints (FMap fss s1) s a _ r =
         let (as, r', ss) = reverseMap fss 0
             -- Fold sparse adjoints into single array adjoint
@@ -106,37 +114,44 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
             (Nothing,           Just a') -> (addAdjoint s1 a' r', [s1])
             _                            -> error "Type mismatch in assignAdjoints/FFold"
 
-    assignAdjoints (FFoldV f1 q f2 s1 s2) s a _ r =
+    assignAdjoints (FFoldV f1 q f2 s1 s2) s a f r =
         if   Map.null f2
         then let r' = reverse f1 s a
                  aa = fromJust $ snd $ r' Map.! s1
-                 az = fromJust $ snd $ r' Map.! s1
+                 az = fromJust $ snd $ r' Map.! s2
              in  (addAdjoint s1 aa (addAdjoint s2 az r), [s1, s2])
         else let r2 = reverse f2 s a
                  a2 = snd $ r2 Map.! q
                  ss = getJoin
                  (a1s, z') = getParts ss $ fromJust a2
-                 a1 = foldl (<+) (AArray $ replicate (Map.size f1) 0.0) a1s
+                 a1 = foldl (<+) (AArray $ replicate adjointLength 0.0) a1s
              in  (addAdjoint s1 a1 (addAdjoint s2 z' r), [s1, s2])
         where
+            adjointLength :: Int
+            adjointLength =
+                let v = getValue s1 f 
+                in  case v of 
+                    FArray _ xs -> length xs
+                    _           -> error "Type mismatch in assignAdjoints/FFoldV/adjointLength"
             getJoin :: [String]
             getJoin = case f2 Map.! q of
                 (FJoin ss, _, _) -> ss
                 _                -> error "Type mismatch in assignAdjoints/FFoldV (2)"
             getParts :: [String] -> Adjoint -> ([Adjoint], Adjoint)
-            getParts []      _              = ([], AReal 0.0)
+            getParts []      _                = ([], AReal 0.0)
             getParts (s':ss) (AArray (a':as)) =
                 let r'  = reverse f1 s' (AReal a')
-                    a'' = fromJust (snd $ r' Map.! s')
+                    a'' = fromJust (snd $ r' Map.! s1)
                     (ra, z') = getParts ss (AArray as)
                 in  case Map.lookup s2 r' of
                     Just (_, Just z'') -> (a'' : ra, z' <+ z'')
                     _                  -> (a'' : ra, z')
 
-    assignAdjoints (FJoin  sss) _ a _ r = (assignAll sss a, sss)
+    assignAdjoints (FJoin  sss) _ a _ r = (assignAll sss a, [])
         where
             assignAll []     _                = r
             assignAll (s:ss) (AArray (a':as)) = addAdjoint s (AReal a') (assignAll ss (AArray as))
+            assignAll _      _                = error "Type mismatch in assignAdjoints/FJoin"
 
     assignAdjoints _ _ _ _ r = (r, [])
 
@@ -151,10 +166,16 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
                     (FArray _ xs) -> AArray $ replicate (length xs) 0.0
                     (FReal  {})   -> AReal 0.0
                     _             -> error "Type mismatch in combineAdjoints/empty"
-    
+
     -- Helper function for getting the intermediate value of an element in the forward trace
     getValue :: String -> Forward -> FValue
-    getValue s f = let (_, _, v) = f Map.! s in v
+    getValue s f = case Map.lookup s f of
+        Just (_, _, v) -> v
+        Nothing        -> case break (=='!') s of
+            (array, '!':index) -> case Map.lookup array f of
+                Just (_, _, FArray _ xs) -> FReal s (xs !! read index)
+                Nothing                  -> error $ "Entry for " ++ s ++ " not found in forward map"
+            _                  -> error $ "Entry for " ++ s ++ " not found in forward map"
 
     -- Gets the value at a certain index of an array adjoint
     indexAdjoint :: Int -> Adjoint -> Adjoint
@@ -172,14 +193,16 @@ module Reverse (reverse, Adjoint (AReal, AArray, ASparse)) where
     resolve :: String -> Forward -> Reverse -> Reverse
     resolve s f r = case Map.lookup s r of
         Just (as, Nothing) -> case Map.lookup s f of
-            Just (fd, c, _) -> if   length as >= c 
+            Just (fd, c, _) -> if   length as >= c
                                then let (a,  r1) = combineAdjoints s f r
                                         (r2, sa) = assignAdjoints fd s a f r1
                                     in  explore sa r2
                                else r
-            Nothing         -> error $ "Variable " ++ show s ++ " not in forward trace:\n" ++ show f
+            Nothing         -> error $ "Variable " ++ show s ++ " not in forward trace: (2)\n" ++ show f
         Just _             -> r
-        Nothing            -> r
+        Nothing            -> case break (=='!') s of
+            (array, '!':_) -> resolve array f r
+            _              -> r
         where
             explore :: [String] -> Reverse -> Reverse
             explore []      r' = r'
