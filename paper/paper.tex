@@ -1,4 +1,4 @@
-\documentclass{paper}
+\documentclass[a4paper]{paper}
 
 \usepackage{adjustbox}
 \usepackage{appendix}
@@ -14,6 +14,7 @@
 \usepackage{wrapfig}
 \usepackage[x11names]{xcolor}
 \usepackage{listings}
+\usepackage{setspace}
 \usepackage{mathtools}
 \usepackage[x11names]{xcolor}
 
@@ -56,12 +57,57 @@
         #1}}
     {}
 
-\title{Maintaining parallelism in reverse-mode automatic differentiation on functional parallel array languages}
-\author{Simon van Hus\\6147879\\s.vanhus@students.uu.nl}
-\date{\today}
+% \title{\centering Maintaining parallelism in reverse-mode automatic differentiation on functional parallel array languages}
+% \author{Simon van Hus\\6147879\\s.vanhus@students.uu.nl}
+% \date{\today}
 
 \begin{document}
-    \maketitle
+    \begin{titlepage}
+        \centering
+        \vspace*{\fill}
+
+        {\large Thesis Project\par}
+
+        \vspace*{0.5cm}
+
+        \begin{huge}
+            \bfseries Maintaining parallelism in reverse-mode automatic differentiation on functional parallel array langauges
+            
+        \end{huge}
+
+        \vspace*{0.5cm}
+
+        \Large Simon van Hus\\
+        \large s.vanhus@students.uu.nl\\
+        \large 6147879\\
+
+        \vspace*{0.5cm}
+        
+        {\Large Master Artificial Intelligence\par}
+        {\Large Master Computing Science\par}
+        {\large Utrecht University\\}
+        {\large September 2023\\}
+
+        \vspace*{0.5cm}
+        
+        \begin{normalsize}
+            \textbf{First Supervisor}\\
+            Prof. dr. G.K. Keller\\
+            g.k.keller@uu.nl\par
+            
+            \textbf{Second Supervisor}\\
+            Dr. M.I.L. Vákár\\
+            m.i.l.vakar@uu.nl\par
+            
+            \textbf{Daily Supervisor}\\
+            T.J. Smeding MSc\\
+            t.j.smeding@uu.nl
+        \end{normalsize}
+
+        \vspace*{1cm}
+
+        \vspace*{\fill}
+    \end{titlepage}
 
     \begin{abstract}
         In this paper we set out to make a simple reverse-mode automatic differentiation (AD) algorithm, that uses tracing for the forward pass, and preserves data parallelism in the reverse pass.
